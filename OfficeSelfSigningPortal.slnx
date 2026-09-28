@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/OfficeSelfSigningPortal.SigningService/OfficeSelfSigningPortal.SigningService.csproj" />
     <Project Path="src/OfficeSelfSigningPortal.WebUI/OfficeSelfSigningPortal.WebUI.csproj" />
+    <Project Path="src/Ossp.Contracts/Ossp.Contracts.csproj" />
     <Project Path="src/OfficeSelfSigningPortal.WorkerService/OfficeSelfSigningPortal.WorkerService.csproj" />
   </Folder>
   <Folder Name="/src/OfficeSelfSigningPortal.AppHost/">

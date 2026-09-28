@@ -8,6 +8,7 @@ using OfficeSelfSigningPortal.WebUI.Authentication;
 using OfficeSelfSigningPortal.WebUI.Authentication.Testing;
 using OfficeSelfSigningPortal.WebUI.Components;
 using OfficeSelfSigningPortal.WebUI.Data;
+using OfficeSelfSigningPortal.WebUI.Ingestion;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +19,9 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddDbContext<PortalDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("portal")));
+
+builder.Services.AddOptions<IngestionOptions>().BindConfiguration(IngestionOptions.SectionName);
+builder.Services.AddScoped<SubmissionService>();
 
 // AuthN/AuthZ (REQ-09, ADR-0001, TM-17): generisches OIDC, Rollen ausschließlich
 // aus IdP-Gruppen-Claims (GroupRoleClaimsTransformation), serverseitige
@@ -95,6 +99,7 @@ app.UseAuthorization();
 app.UseAntiforgery();
 
 app.MapDefaultEndpoints();
+app.MapSubmissionEndpoints();
 
 if (useTestAuthHandler)
 {
