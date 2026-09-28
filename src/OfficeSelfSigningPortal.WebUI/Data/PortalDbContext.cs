@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 
 namespace OfficeSelfSigningPortal.WebUI.Data;
@@ -10,6 +11,10 @@ public class PortalDbContext(DbContextOptions<PortalDbContext> options) : DbCont
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // MassTransit-Outbox (REQ-11, TM-06) — atomare Publikation mit dem Upload.
+        modelBuilder.AddOutboxStateEntity();
+        modelBuilder.AddOutboxMessageEntity();
+
         modelBuilder.Entity<AnalysisJob>(entity =>
         {
             entity.ToTable("analysis_jobs");

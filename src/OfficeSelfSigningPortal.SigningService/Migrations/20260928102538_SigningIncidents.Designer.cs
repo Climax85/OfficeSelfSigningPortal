@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using OfficeSelfSigningPortal.SigningService.Data;
@@ -11,9 +12,11 @@ using OfficeSelfSigningPortal.SigningService.Data;
 namespace OfficeSelfSigningPortal.SigningService.Migrations
 {
     [DbContext(typeof(SigningDbContext))]
-    partial class SigningDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260928102538_SigningIncidents")]
+    partial class SigningIncidents
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

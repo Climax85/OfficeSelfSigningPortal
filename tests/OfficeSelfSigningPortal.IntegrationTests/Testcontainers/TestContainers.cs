@@ -15,5 +15,9 @@ public static class TestContainers
 
     public static RabbitMqContainer CreateRabbitMq() =>
         new RabbitMqBuilder("rabbitmq:4-alpine")
+            // Eigener User (statt guest): RabbitMQ erlaubt guest nur von Loopback-Peers —
+            // über Docker-NAT wäre die Verbindung sonst abgelehnt.
+            .WithUsername("ossp")
+            .WithPassword("ossp-test")
             .Build();
 }

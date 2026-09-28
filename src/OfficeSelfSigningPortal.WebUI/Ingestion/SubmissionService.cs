@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using OfficeSelfSigningPortal.WebUI.Data;
@@ -11,11 +12,13 @@ using static SubmissionOutcome;
 /// <summary>
 /// Verdrahtet Validierung und Persistierung eines Uploads.
 /// Der gültige Upload erzeugt den persistierten Analyseauftrag als ScanRequested-
-/// Datensatz (Anhang A, inkl. ContentSha256 als TOCTOU-Basis); die Veröffentlichung
-/// über den Message-Bus verdrahtet Ticket 04 (Saga/Outbox).
+/// Datensatz (Anhang A, inkl. ContentSha256 als TOCTOU-Basis) und publiziert ihn
+/// über die EF-Core-Outbox (REQ-11, TM-06): Staging vor SaveChanges, die Nachricht
+/// committet atomar mit dem Upload und startet die Saga im WorkerService.
 /// </summary>
 public sealed class SubmissionService(
     PortalDbContext db,
+    IPublishEndpoint publishEndpoint,
     IOptions<IngestionOptions> options,
     ILogger<SubmissionService> logger)
 {
@@ -83,6 +86,14 @@ public sealed class SubmissionService(
             StatusReason = reason,
             CreatedAt = now,
         });
+
+        if (verdict is Accepted)
+        {
+            // Outbox statt direktem Publish (REQ-11, TM-06): Der Outbox-Interceptor
+            // schreibt die Nachricht bei SaveChanges in derselben Transaktion —
+            // ein Crash zwischen Upload und Publikation verliert den Scanauftrag nicht.
+            await publishEndpoint.Publish(scanRequested, cancellationToken);
+        }
 
         await db.SaveChangesAsync(cancellationToken);
 

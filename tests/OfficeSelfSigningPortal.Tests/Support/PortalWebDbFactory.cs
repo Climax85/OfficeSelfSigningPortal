@@ -19,6 +19,8 @@ public sealed class PortalWebDbFactory : WebApplicationFactory<App>
     {
         builder.UseSetting("Auth:UseTestAuthHandler", "true");
         builder.UseSetting("ConnectionStrings:portal", _connectionString);
+        // MassTransit im InMemory-Transport fahren (kein Broker im Seam S1).
+        builder.UseSetting("OsspBus:Transport", "InMemory");
     }
 }
 

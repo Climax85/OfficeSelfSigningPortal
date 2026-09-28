@@ -5,7 +5,17 @@ namespace Ossp.Contracts;
 /// </summary>
 public static class QueueNames
 {
+    /// <summary>Scanner-Übergabe WebUI → WorkerService (Anhang A); Consumer verdrahtet Ticket 05.</summary>
     public const string ScanRequested = "ossp.scan-requested";
+
+    /// <summary>Sign-Queue — ausschließlich von der Saga publiziert (REQ-14, TM-19).</summary>
+    public const string SignMacroRequested = "ossp.sign-macro-requested";
+
+    /// <summary>Endpoint der AnalysisSaga (Zustands-/Ereignisverarbeitung, Anhang B).</summary>
+    public const string AnalysisSaga = "ossp.analysis-saga";
+
+    /// <summary>Dead-Letter-/Error-Queue des Scanner-Endpunkts (REQ-22, TC-16).</summary>
+    public static string ScanRequestedError => ScanRequested + "_error";
 }
 
 /// <summary>

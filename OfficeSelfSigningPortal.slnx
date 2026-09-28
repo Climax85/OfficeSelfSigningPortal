@@ -13,6 +13,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OfficeSelfSigningPortal.IntegrationTests/OfficeSelfSigningPortal.IntegrationTests.csproj" />
+    <Project Path="tests/OfficeSelfSigningPortal.SagaTransportHarness/OfficeSelfSigningPortal.SagaTransportHarness.csproj" />
     <Project Path="tests/OfficeSelfSigningPortal.Tests/OfficeSelfSigningPortal.Tests.csproj" />
   </Folder>
 </Solution>
