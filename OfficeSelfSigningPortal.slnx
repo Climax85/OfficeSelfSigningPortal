@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OfficeSelfSigningPortal.SigningService/OfficeSelfSigningPortal.SigningService.csproj" />
+    <Project Path="src/OfficeSelfSigningPortal.WebUI/OfficeSelfSigningPortal.WebUI.csproj" />
+    <Project Path="src/OfficeSelfSigningPortal.WorkerService/OfficeSelfSigningPortal.WorkerService.csproj" />
+  </Folder>
+  <Folder Name="/src/OfficeSelfSigningPortal.AppHost/">
+    <Project Path="src/OfficeSelfSigningPortal.AppHost/AppHost.csproj" />
+  </Folder>
+  <Folder Name="/src/OfficeSelfSigningPortal.ServiceDefaults/">
+    <Project Path="src/OfficeSelfSigningPortal.ServiceDefaults/OfficeSelfSigningPortal.ServiceDefaults.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OfficeSelfSigningPortal.IntegrationTests/OfficeSelfSigningPortal.IntegrationTests.csproj" />
+    <Project Path="tests/OfficeSelfSigningPortal.Tests/OfficeSelfSigningPortal.Tests.csproj" />
+  </Folder>
+</Solution>

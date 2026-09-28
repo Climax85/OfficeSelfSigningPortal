@@ -1,0 +1,40 @@
+{
+  "id": "portal-dev",
+  "realm": "portal-dev",
+  "displayName": "Office-Self-Signing-Portal (Dev)",
+  "enabled": true,
+  "registrationAllowed": false,
+  "groups": [
+    {
+      "name": "Einreicher",
+      "path": "/Einreicher"
+    },
+    {
+      "name": "Bearbeiter",
+      "path": "/Bearbeiter"
+    },
+    {
+      "name": "Admin",
+      "path": "/Admin"
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "office-signing-portal",
+      "name": "Office Signing Portal (Dev)",
+      "description": "Dev-Client für das lokale Aspire-Setup",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:*/signin-oidc",
+        "https://localhost:*/signin-oidc"
+      ],
+      "webOrigins": [
+        "http://localhost:*",
+        "https://localhost:*"
+      ]
+    }
+  ]
+}

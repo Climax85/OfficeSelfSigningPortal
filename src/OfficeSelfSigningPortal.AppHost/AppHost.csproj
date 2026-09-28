@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Sdk Name="Aspire.AppHost.Sdk" Version="13.5.4" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAspireHost>true</IsAspireHost>
+    <AspireUseCliBundle>false</AspireUseCliBundle>
+    <!-- CLI-Bundle nicht erforderlich (keine Bundle-Features genutzt); Warnung ASPIRE010 unterdrückt. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+    <UserSecretsId>5e2f4651-2cfa-4b7d-809b-7ebc4887a2f3</UserSecretsId>
+    <KeycloakImportPath>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../keycloak'))</KeycloakImportPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Absoluter Repo-Pfad für den Keycloak-Realm-Bind-Mount (unabhängig vom Arbeitsverzeichnis). -->
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>KeycloakImportPath</_Parameter1>
+      <_Parameter2>$(KeycloakImportPath)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.5.4" />
+    <PackageReference Include="Aspire.Hosting.RabbitMQ" Version="13.5.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OfficeSelfSigningPortal.WebUI\OfficeSelfSigningPortal.WebUI.csproj" />
+    <ProjectReference Include="..\OfficeSelfSigningPortal.WorkerService\OfficeSelfSigningPortal.WorkerService.csproj" />
+    <ProjectReference Include="..\OfficeSelfSigningPortal.SigningService\OfficeSelfSigningPortal.SigningService.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: Build und schnelle Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Tests (Trait-Filter: ohne langsame Integrationstests)
+        run: dotnet test --configuration Release --no-build --filter "Category!=Integration"
+
+  integration-tests:
+    name: Integrationstests (Testcontainers)
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Integrationstests (Trait-Filter: Category=Integration)
+        run: dotnet test --configuration Release --no-build --filter "Category=Integration"
+
+  secret-scan:
+    name: Repo-Scan auf Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Git-History und Working Tree auf Secret-Muster prüfen
+        shell: bash
+        run: |
+          set -u
+          PATTERNS=(
+            'BEGIN [A-Z ]*PRIVATE KEY'
+            'BEGIN[ ]+OPENSSH[ ]+PRIVATE[ ]+KEY'
+            'AKIA[0-9A-Z]{16}'
+            'ghp_[A-Za-z0-9]{36}'
+            'gho_[A-Za-z0-9]{36}'
+            'github_pat_[A-Za-z0-9_]{22,}'
+            'xox[baprs]-[A-Za-z0-9-]{10,}'
+            'BEGIN[ ]+PGP[ ]+PRIVATE[ ]+KEY[ ]+BLOCK'
+          )
+          FOUND=0
+          for pattern in "${PATTERNS[@]}"; do
+            HITS=$(git grep -nE "$pattern" || true)
+            if [ -n "$HITS" ]; then
+              echo "Verdächtiges Muster gefunden: $pattern"
+              echo "$HITS"
+              FOUND=1
+            fi
+          done
+          if [ "$FOUND" -ne 0 ]; then
+            echo "::error::Repo-Scan auf Secrets: Befund vorhanden"
+            exit 1
+          fi
+          echo "Repo- und CI-Log-Scan auf Secrets ohne Befund."

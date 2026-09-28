@@ -1,0 +1,62 @@
+using System.Reflection;
+
+var builder = DistributedApplication.CreateBuilder(args);
+
+// Dev-Credentials ausschließlich via Parameter (User-Secrets/Umgebungsvariablen) —
+// niemals im Repository (REQ-24, TM-12). Setup: docs/development-setup.md
+var postgresPassword = builder.AddParameter("postgres-password", secret: true);
+var rabbitMqUser = builder.AddParameter("rabbitmq-user", secret: true);
+var rabbitMqPassword = builder.AddParameter("rabbitmq-password", secret: true);
+var keycloakAdmin = builder.AddParameter("keycloak-admin", secret: true);
+var keycloakAdminPassword = builder.AddParameter("keycloak-admin-password", secret: true);
+
+var postgres = builder.AddPostgres("postgres", password: postgresPassword)
+    .WithDataVolume()
+    .WithLifetime(ContainerLifetime.Persistent);
+
+var portalDb = postgres.AddDatabase("portal");
+var workerDb = postgres.AddDatabase("worker");
+var signingDb = postgres.AddDatabase("signing");
+
+var rabbitmq = builder.AddRabbitMQ("rabbitmq", userName: rabbitMqUser, password: rabbitMqPassword)
+    .WithDataVolume()
+    .WithLifetime(ContainerLifetime.Persistent);
+
+// Keycloak als IdP-Container im Dev-Profil, Realm-Import aus dem Repository
+// (Realm-Datei enthält keine Credentials).
+var keycloakImportPath = typeof(Program).Assembly
+    .GetCustomAttributes<AssemblyMetadataAttribute>()
+    .Single(a => a.Key == "KeycloakImportPath")
+    .Value!;
+
+var keycloak = builder.AddContainer("keycloak", "quay.io/keycloak/keycloak", "latest")
+    .WithEnvironment("KC_BOOTSTRAP_ADMIN_USERNAME", keycloakAdmin)
+    .WithEnvironment("KC_BOOTSTRAP_ADMIN_PASSWORD", keycloakAdminPassword)
+    .WithArgs("start-dev", "--import-realm")
+    .WithHttpEndpoint(targetPort: 8080, name: "http")
+    .WithBindMount(keycloakImportPath, "/opt/keycloak/data/import", isReadOnly: true)
+    .WithLifetime(ContainerLifetime.Persistent);
+
+// MailPit als Test-SMTP (REQ-21): UI auf 8025, SMTP auf 1025.
+var mailpit = builder.AddContainer("mailpit", "axllent/mailpit", "latest")
+    .WithHttpEndpoint(targetPort: 8025, name: "http")
+    .WithEndpoint(targetPort: 1025, name: "smtp")
+    .WithLifetime(ContainerLifetime.Persistent);
+
+var webui = builder.AddProject<Projects.OfficeSelfSigningPortal_WebUI>("webui")
+    .WithReference(portalDb)
+    .WithReference(rabbitmq)
+    .WaitFor(postgres)
+    .WaitFor(rabbitmq);
+
+var workerService = builder.AddProject<Projects.OfficeSelfSigningPortal_WorkerService>("workerservice")
+    .WithReference(workerDb)
+    .WithReference(rabbitmq)
+    .WaitFor(postgres)
+    .WaitFor(rabbitmq);
+
+var signingService = builder.AddProject<Projects.OfficeSelfSigningPortal_SigningService>("signingservice")
+    .WithReference(signingDb)
+    .WaitFor(postgres);
+
+builder.Build().Run();
