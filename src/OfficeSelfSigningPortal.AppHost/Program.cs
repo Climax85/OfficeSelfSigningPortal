@@ -46,6 +46,9 @@ var mailpit = builder.AddContainer("mailpit", "axllent/mailpit", "latest")
 
 var webui = builder.AddProject<Projects.OfficeSelfSigningPortal_WebUI>("webui")
     .WithReference(portalDb)
+    // Ticket 07: Die Review-API liest offene Vorgänge read-only aus dem
+    // Saga-State-Store (kein Schreibpfad, parametrisiertes SQL wie im SigningService).
+    .WithReference(workerDb, connectionName: "sagastate")
     .WithReference(rabbitmq)
     .WithEnvironment("PortalAuth__Authority",
         ReferenceExpression.Create($"{keycloak.GetEndpoint("http")}/realms/portal-dev"))

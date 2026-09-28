@@ -29,6 +29,7 @@ public sealed class ScanEngineContainerSliceTests : IAsyncLifetime
 {
     private const string ClamAvImage = "clamav/clamav:1.4.6-debian";
 
+    private string _workDir = "";
     private string _signatureDir = "";
     private IContainer _clamAv = null!;
     private string _clamAvHost = "";
@@ -37,8 +38,23 @@ public sealed class ScanEngineContainerSliceTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         // Arrange: Signatur-Verzeichnis — genau eine Hash-Signatur über den Fund-Korpus.
-        _signatureDir = Path.Combine(Path.GetTempPath(), $"ossp-clamav-{Guid.NewGuid():N}");
+        // Zwei Ebenen unter /tmp (sticky): der Container-Entrypoint läuft als root und
+        // chownt das Bind-Mount (/var/lib/clamav) rekursiv auf clamav:clamav — das
+        // Host-Verzeichnis gehört danach UID 100. Mit 0777 bleibt der Test-Prozess
+        // trotzdem über „other“-Rechte schreib- und aufräumberechtigt, und weil das
+        // Root-Arbeitsverzeichnis weiterhin dem Prozess gehört, darf er den gechownten
+        // Unterordner davon ablösen (sticky /tmp verlangt Besitz nur für Top-Level).
+        _workDir = Path.Combine(Path.GetTempPath(), $"ossp-clamav-{Guid.NewGuid():N}");
+        _signatureDir = Path.Combine(_workDir, "db");
         Directory.CreateDirectory(_signatureDir);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(_signatureDir,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute);
+        }
+
         var fundCorpus = ScanCorpus.BuildVbaProject([ScanCorpus.VerhaltensSource], encryptedDir: false);
         var fundMd5 = Convert.ToHexString(MD5.HashData(fundCorpus)).ToLowerInvariant();
         await File.WriteAllTextAsync(
@@ -63,7 +79,7 @@ public sealed class ScanEngineContainerSliceTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _clamAv.DisposeAsync();
-        Directory.Delete(_signatureDir, recursive: true);
+        Directory.Delete(_workDir, recursive: true);
     }
 
     [Fact]
