@@ -17,6 +17,13 @@ public sealed class PortalAuthOptions
     /// <summary>Optional — der Dev-Client ist public (PKCE ohne Secret).</summary>
     public string? ClientSecret { get; set; }
 
+    /// <summary>
+    /// Metadaten nur per HTTPS beziehen (OIDC-Default). Ausschließlich der
+    /// AppHost-Dev-IdP (Keycloak via http-Container-Endpoint) schaltet das
+    /// explizit um — niemals hart codiert (Must-Fix Review-Runde 1).
+    /// </summary>
+    public bool RequireHttpsMetadata { get; set; } = true;
+
     /// <summary>Claim-Typ, in dem der IdP die Gruppenmitgliedschaften liefert.</summary>
     public string GroupClaimType { get; set; } = "groups";
 

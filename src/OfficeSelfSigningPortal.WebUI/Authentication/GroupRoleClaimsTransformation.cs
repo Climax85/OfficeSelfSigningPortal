@@ -24,11 +24,19 @@ public sealed class GroupRoleClaimsTransformation : IClaimsTransformation
         if (principal.Identity is ClaimsIdentity { IsAuthenticated: true } identity)
         {
             // Vor dem Hinzufügen materialisieren: die Enumeration teilt sich die
-            // Claims-Liste mit AddClaim und würde sonst invalidiert werden.
+            // Claims-Liste mit AddClaim/RemoveClaim und würde sonst invalidiert werden.
             var groups = principal.FindAll(_options.GroupClaimType).Select(c => c.Value).ToList();
-            foreach (var group in groups)
+
+            // Eingehende Role-Claims (z. B. App Roles aus IdP-Misconfig) erzeugen
+            // keine Berechtigung — sie werden vor der Ableitung entfernt (AK-32, RV-05).
+            foreach (var foreignRoleClaim in principal.FindAll(identity.RoleClaimType).ToList())
             {
-                if (_options.GroupRoleMap.TryGetValue(group, out var role) && !principal.IsInRole(role))
+                identity.RemoveClaim(foreignRoleClaim);
+            }
+
+            foreach (var group in groups.Distinct(StringComparer.Ordinal))
+            {
+                if (_options.GroupRoleMap.TryGetValue(group, out var role))
                 {
                     identity.AddClaim(new Claim(identity.RoleClaimType, role));
                 }

@@ -25,6 +25,12 @@ public sealed class TestAuthHandler : AuthenticationHandler<TestAuthHandlerOptio
     public const string UserHeader = "X-Test-User";
     public const string GroupsHeader = "X-Test-Groups";
 
+    /// <summary>
+    /// Optional: simuliert einen falsch konfigurierten IdP, der Rollen-Claims
+    /// direkt liefert (RV-05) — dürfen nach AK-32 keine Berechtigung erzeugen.
+    /// </summary>
+    public const string RolesHeader = "X-Test-Roles";
+
     public TestAuthHandler(
         IOptionsMonitor<TestAuthHandlerOptions> options,
         ILoggerFactory logger,
@@ -49,6 +55,14 @@ public sealed class TestAuthHandler : AuthenticationHandler<TestAuthHandlerOptio
             foreach (var group in groups.ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 identity.AddClaim(new Claim(Options.GroupClaimType, group));
+            }
+        }
+
+        if (Request.Headers.TryGetValue(RolesHeader, out var roles))
+        {
+            foreach (var role in roles.ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                identity.AddClaim(new Claim(identity.RoleClaimType, role));
             }
         }
 

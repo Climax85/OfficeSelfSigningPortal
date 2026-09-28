@@ -49,6 +49,9 @@ var webui = builder.AddProject<Projects.OfficeSelfSigningPortal_WebUI>("webui")
     .WithReference(rabbitmq)
     .WithEnvironment("PortalAuth__Authority",
         ReferenceExpression.Create($"{keycloak.GetEndpoint("http")}/realms/portal-dev"))
+    // Der Dev-Keycloak-Endpoint ist http (Container-Interna); der sichere Default
+    // (RequireHttpsMetadata=true) bleibt unverändert und wird hier nur fürs Dev-Profil umgeschaltet.
+    .WithEnvironment("PortalAuth__RequireHttpsMetadata", "false")
     .WaitFor(postgres)
     .WaitFor(rabbitmq);
 

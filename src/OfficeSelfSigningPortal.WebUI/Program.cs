@@ -71,6 +71,7 @@ else
             options.ResponseType = OpenIdConnectResponseType.Code;
             options.SaveTokens = true;
             options.GetClaimsFromUserInfoEndpoint = true;
+            options.RequireHttpsMetadata = authOptions.RequireHttpsMetadata;
             options.TokenValidationParameters.NameClaimType = "preferred_username";
         });
 }

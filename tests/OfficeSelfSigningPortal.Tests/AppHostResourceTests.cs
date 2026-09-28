@@ -87,6 +87,30 @@ public class AppHostResourceTests
     }
 
     [Fact]
+    public async Task AppHost_WebUI_erhaelt_RequireHttpsMetadata_fuer_den_Dev_Keycloak()
+    {
+        // Arrange — Must-Fix Runde 1: der Dev-Keycloak endpoint ist http; ohne
+        // explizite Abschaltung bricht der OIDC-Metadaten-Abruf (https erzwungen).
+        var appBuilder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.AppHost>(
+            ParameterArgs.Split(';'));
+
+        // Act
+        var webui = appBuilder.Resources.OfType<ProjectResource>().Single(p => p.Name == "webui");
+        var context = new EnvironmentCallbackContext(
+            new DistributedApplicationExecutionContext(DistributedApplicationOperation.Run),
+            webui);
+        foreach (var annotation in webui.Annotations.OfType<EnvironmentCallbackAnnotation>())
+        {
+            await annotation.Callback(context);
+        }
+
+        // Assert — sicherer Default bleibt true; nur der AppHost-Dev-IdP schaltet explizit um.
+        var flag = Assert.Single(context.EnvironmentVariables,
+            kv => kv.Key == "PortalAuth__RequireHttpsMetadata");
+        Assert.Equal("false", flag.Value?.ToString(), ignoreCase: true);
+    }
+
+    [Fact]
     public async Task AppHost_Keycloak_und_MailPit_sind_Container_ohne_Dev_Credentials_im_Repo()
     {
         // Arrange

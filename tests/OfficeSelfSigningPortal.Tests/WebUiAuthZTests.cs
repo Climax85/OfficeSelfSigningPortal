@@ -110,6 +110,36 @@ public sealed class WebUiAuthZTests(PortalWebFactory factory) : IClassFixture<Po
     }
 
     [Fact]
+    public async Task Get_AdminBereich_MitNurBearbeiterClaim_WirdMit403Abgewiesen()
+    {
+        // Arrange — RV-07: Cross-Roll-Abfrage auch für Bearbeiter → Admin.
+        var client = CreateClientFor(user: "bob", groups: "Bearbeiter");
+
+        // Act
+        var response = await client.GetAsync("/__test/authz/administrator");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Get_EditorBereich_MitDirektemRoleClaimAberOhneGruppen_WirdMit403Abgewiesen()
+    {
+        // Arrange — AK-32/RV-05: ein IdP, der Rollen-Claims direkt liefert
+        // (simuliert via X-Test-Roles), darf keine Berechtigung erzeugen —
+        // ausschließlich Gruppen-Claims zählen.
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "mallory");
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RolesHeader, "Bearbeiter");
+
+        // Act
+        var response = await client.GetAsync("/__test/authz/editor");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Get_AdminBereich_MitAdminGruppenClaim_WirdErreicht()
     {
         // Arrange
