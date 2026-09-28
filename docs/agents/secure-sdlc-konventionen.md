@@ -93,7 +93,8 @@ ID-Konsistenz: IDs sind feature-lokal und bleiben über Spec, Artefakte, Tickets
 ## 5. `.scratch`-Lebenszyklus und Audit-Trail
 
 - `.scratch/` ist **gitignored und flüchtig**.
-- Audit-Trail stattdessen: Ticket-Referenz ↔ Changelog der Anwendungsdoku (§7). Jedes Feature ist über sein Ticket nachvollziehbar.
+- **Feature-Epic und Arbeitstickets leben im konfigurierten Tracker** (Vertrag: [feature-operations.md](feature-operations.md)); Local-Markdown als Referenz-Implementierung legt sie als Dateien an (`.scratch/<feature>/epic.md` + `.scratch/<feature>/issues/`). Auf echten Trackern sind sie echte Issues (Kind-Tickets des Epics).
+- Audit-Trail stattdessen: Ticket-Referenz ↔ Changelog der Anwendungsdoku (§7). Jedes Feature ist über sein Epic nachvollziehbar.
 - Nach Merge (`merge-app-docs`) und Ticket-Rückschreiben darf der Feature-Ordner gelöscht werden.
 - Rückschreiben ins Ticket: **verdichtet** per Template (Kerntabellen, keine Volltexte). Die Ticketbeschreibung ist kein Artefakt-Archiv.
 
@@ -101,7 +102,7 @@ ID-Konsistenz: IDs sind feature-lokal und bleiben über Spec, Artefakte, Tickets
 
 - `.scratch/<feature>/STATUS.md` ist der maschinenlesbare Ersatz für Konversationskontext: aktuelle Phase, fertige Artefakte mit Pfaden, offene Entscheidungen, Ticket-Referenz, Profil (klein/groß).
 - Jede Phase aktualisiert STATUS.md als letzten Schritt (Teil der DoD-Checkliste).
-- Feature-Eingang: Freitext **oder** Ticket-Referenz über den konfigurierten Tracker-Adapter. Bei Ticket-Referenz gilt die Ticketnummer als Feature-Name; der Adapter ist konfigurierbar, Referenz-Implementierung ist Local-Markdown (siehe `issue-tracker.md`).
+- Feature-Eingang: Freitext **oder** Ticket-Referenz über den konfigurierten Tracker-Adapter. Bei Ticket-Referenz gilt die Ticketnummer als Feature-Name und die referenzierte Ticket **ist** das Feature-Epic; der Adapter ist konfigurierbar, Referenz-Implementierung ist Local-Markdown (siehe `issue-tracker.md`).
 
 ## 7. Anwendungsdokumentation
 

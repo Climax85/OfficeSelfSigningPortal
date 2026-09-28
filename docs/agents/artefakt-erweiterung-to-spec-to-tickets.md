@@ -1,6 +1,6 @@
 # Artefakt-Erweiterung für `to-spec` / `to-tickets`
 
-> Delta-Spezifikation (verbindlich, siehe [secure-sdlc-konventionen.md](secure-sdlc-konventionen.md) §1). **Mechanismus:** Artefakt-Pass. **Gilt für:** Local-Markdown-Tracker (`.scratch/<feature>/`). Die SKILL.md-Dateien von `to-spec`/`to-tickets` bleiben unverändert — diese Datei ist der einzige Eingriffspunkt.
+> Delta-Spezifikation (verbindlich, siehe [secure-sdlc-konventionen.md](secure-sdlc-konventionen.md) §1). **Mechanismus:** Artefakt-Pass. **Gilt für:** der konfigurierte Tracker (siehe [feature-operations.md](feature-operations.md)). Local-Markdown: `.scratch/<feature>/`; GitHub/GitLab: Arbeitstickets sind Kind-Issues des Feature-Epics. Die SKILL.md-Dateien von `to-spec`/`to-tickets` bleiben unverändert — diese Datei ist der einzige Eingriffspunkt.
 
 ## 1. Mechanismus: Artefakt-Pass
 
@@ -56,9 +56,9 @@ Schreibt `akzeptanzkriterien.md` aus den veröffentlichten Ticket-Dateien. Akzep
 
 **Ablauf:**
 
-1. Alle `issues/NN-*.md` in Nummernreihenfolge lesen. Jede Zeile unter `Acceptance criteria` wird ein AK-Eintrag: Kriterium = Zeilentext ohne Checkbox, Art = `security`, wenn das Kriterium eine Security-REQ prüft oder Schutzverletzung thematisiert, sonst `fachlich`, Referenz = `Ticket NN` (plus `REQ-nn`, falls die Zeile eine nennt).
+1. Alle Arbeitstickets des Features in Abhängigkeitsreihenfolge lesen (lokal: `issues/NN-*.md`; GitHub/GitLab: Kind-Issues des Epics). Jede Zeile unter `Acceptance criteria` wird ein AK-Eintrag: Kriterium = Zeilentext ohne Checkbox, Art = `security`, wenn das Kriterium eine Security-REQ prüft oder Schutzverletzung thematisiert, sonst `fachlich`, Referenz = `Ticket NN` (plus `REQ-nn`, falls die Zeile eine nennt).
 2. REQ-Abdeckung prüfen: jede `REQ-nn` aus `anforderungen.md` braucht mindestens ein AK. Fehlende anfügen, Form „Wenn `<Bedingung aus REQ>`, dann `<erwartetes Verhalten>`", Art gemäß Security-Flag der REQ, Referenz = die `REQ-nn`.
-3. IDs minten (§5) und **Write-back** in die Tickets: jede Kriterienzeile in `issues/NN-*.md` erhält das Präfix `(AK-nn)`.
+3. IDs minten (§5) und **Write-back** in die Tickets: jede Kriterienzeile im Ticket erhält das Präfix `(AK-nn)` (lokal: Datei editieren; GitHub/GitLab: Issue-Body aktualisieren).
 4. `STATUS.md` (falls vorhanden): Artefakt-Status `Akzeptanzkriterien` = `fertig`, „Letzte Aktualisierung" = `to-tickets Artefakt-Pass`.
 
 **DoD:**
