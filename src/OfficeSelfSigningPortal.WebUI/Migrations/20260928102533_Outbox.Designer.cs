@@ -2,18 +2,21 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using OfficeSelfSigningPortal.WorkerService.Data;
+using OfficeSelfSigningPortal.WebUI.Data;
 
 #nullable disable
 
-namespace OfficeSelfSigningPortal.WorkerService.Migrations
+namespace OfficeSelfSigningPortal.WebUI.Migrations
 {
-    [DbContext(typeof(WorkerDbContext))]
-    partial class WorkerDbContextModelSnapshot : ModelSnapshot
+    [DbContext(typeof(PortalDbContext))]
+    [Migration("20260928102533_Outbox")]
+    partial class Outbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -186,9 +189,9 @@ namespace OfficeSelfSigningPortal.WorkerService.Migrations
                     b.ToTable("OutboxState");
                 });
 
-            modelBuilder.Entity("OfficeSelfSigningPortal.WorkerService.Saga.AnalysisSagaState", b =>
+            modelBuilder.Entity("OfficeSelfSigningPortal.WebUI.Data.AnalysisJob", b =>
                 {
-                    b.Property<Guid>("CorrelationId")
+                    b.Property<Guid>("JobId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
@@ -197,79 +200,58 @@ namespace OfficeSelfSigningPortal.WorkerService.Migrations
 
                     b.Property<string>("ContentSha256")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("text");
 
                     b.Property<string>("ContentType")
                         .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
+                        .HasColumnType("text");
 
-                    b.Property<string>("CurrentState")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<long>("FileSizeBytes")
                         .HasColumnType("bigint");
 
                     b.Property<string>("OriginalFileName")
                         .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasColumnType("text");
 
-                    b.Property<DateTimeOffset>("ReceivedAt")
-                        .HasColumnType("timestamp with time zone");
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("StatusReason")
+                        .HasColumnType("text");
 
                     b.Property<string>("SubmittedBy")
                         .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.HasKey("CorrelationId");
-
-                    b.HasIndex("ReceivedAt");
-
-                    b.ToTable("analysis_saga", (string)null);
-                });
-
-            modelBuilder.Entity("OfficeSelfSigningPortal.WorkerService.Saga.SagaAuditEntry", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Aktor")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("Detail")
                         .HasColumnType("text");
 
-                    b.Property<string>("Ereignis")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                    b.HasKey("JobId");
 
-                    b.Property<Guid>("JobId")
+                    b.HasIndex("ArtifactId")
+                        .IsUnique();
+
+                    b.ToTable("analysis_jobs", (string)null);
+                });
+
+            modelBuilder.Entity("OfficeSelfSigningPortal.WebUI.Data.Artifact", b =>
+                {
+                    b.Property<Guid>("ArtifactId")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Zustand")
+                    b.Property<byte[]>("Content")
                         .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
+                        .HasColumnType("bytea");
 
-                    b.HasKey("Id");
+                    b.Property<string>("ContentSha256")
+                        .IsRequired()
+                        .HasColumnType("text");
 
-                    b.HasIndex("JobId");
+                    b.HasKey("ArtifactId");
 
-                    b.ToTable("saga_audit_entries", (string)null);
+                    b.ToTable("artifacts", (string)null);
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxMessage", b =>
@@ -282,6 +264,23 @@ namespace OfficeSelfSigningPortal.WorkerService.Migrations
                         .WithMany()
                         .HasForeignKey("InboxMessageId", "InboxConsumerId")
                         .HasPrincipalKey("MessageId", "ConsumerId");
+                });
+
+            modelBuilder.Entity("OfficeSelfSigningPortal.WebUI.Data.AnalysisJob", b =>
+                {
+                    b.HasOne("OfficeSelfSigningPortal.WebUI.Data.Artifact", "Artifact")
+                        .WithOne("Job")
+                        .HasForeignKey("OfficeSelfSigningPortal.WebUI.Data.AnalysisJob", "ArtifactId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Artifact");
+                });
+
+            modelBuilder.Entity("OfficeSelfSigningPortal.WebUI.Data.Artifact", b =>
+                {
+                    b.Navigation("Job")
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

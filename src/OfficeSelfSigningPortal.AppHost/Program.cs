@@ -63,6 +63,8 @@ var workerService = builder.AddProject<Projects.OfficeSelfSigningPortal_WorkerSe
 
 var signingService = builder.AddProject<Projects.OfficeSelfSigningPortal_SigningService>("signingservice")
     .WithReference(signingDb)
+    // TM-19: Der Guard verifiziert den Saga-Status read-only gegen den Saga-State-Store.
+    .WithReference(workerDb, connectionName: "sagastate")
     .WaitFor(postgres);
 
 builder.Build().Run();

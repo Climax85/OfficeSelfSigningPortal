@@ -9,10 +9,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OfficeSelfSigningPortal.ServiceDefaults\OfficeSelfSigningPortal.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Ossp.Contracts\Ossp.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="MassTransit" Version="8.5.7" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.5.7" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
 
   <ItemGroup>

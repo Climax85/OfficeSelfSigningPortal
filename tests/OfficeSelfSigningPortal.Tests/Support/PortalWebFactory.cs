@@ -16,5 +16,8 @@ public sealed class PortalWebFactory : WebApplicationFactory<App>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("Auth:UseTestAuthHandler", "true");
+        // MassTransit im InMemory-Transport fahren (kein Broker im Seam S1);
+        // Outbox-Tabellen liegen auf dem Test-PostgreSQL der S1-Fixtures.
+        builder.UseSetting("OsspBus:Transport", "InMemory");
     }
 }

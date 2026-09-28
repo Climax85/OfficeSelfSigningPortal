@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
@@ -22,6 +23,36 @@ builder.Services.AddDbContext<PortalDbContext>(options =>
 
 builder.Services.AddOptions<IngestionOptions>().BindConfiguration(IngestionOptions.SectionName);
 builder.Services.AddScoped<SubmissionService>();
+
+// ScanRequested-Publikation über die EF-Core-Outbox (REQ-11, TM-06): Staging vor
+// SaveChanges — die Nachricht committet atomar mit dem Upload. Test-Suites setzen
+// OsspBus:Transport=InMemory.
+var transport = builder.Configuration.GetValue<string>("OsspBus:Transport") ?? "RabbitMQ";
+
+builder.Services.AddMassTransit(x =>
+{
+    x.AddEntityFrameworkOutbox<PortalDbContext>(o =>
+    {
+        o.UsePostgres();
+        o.QueryDelay = TimeSpan.FromSeconds(5);
+        o.UseBusOutbox();
+    });
+
+    if (transport.Equals("InMemory", StringComparison.OrdinalIgnoreCase))
+    {
+        x.UsingInMemory((_, cfg) =>
+        {
+            // WebUI publiziert ausschließlich — keine Receive-Endpunkte.
+        });
+    }
+    else
+    {
+        var rabbitMqConnectionString = builder.Configuration.GetConnectionString("rabbitmq")
+            ?? throw new InvalidOperationException(
+                "Connection String 'rabbitmq' fehlt — bitte Aspire-AppHost oder Konfiguration prüfen.");
+        x.UsingRabbitMq((_, cfg) => cfg.Host(rabbitMqConnectionString));
+    }
+});
 
 // AuthN/AuthZ (REQ-09, ADR-0001, TM-17): generisches OIDC, Rollen ausschließlich
 // aus IdP-Gruppen-Claims (GroupRoleClaimsTransformation), serverseitige
