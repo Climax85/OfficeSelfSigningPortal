@@ -43,6 +43,7 @@ public static class AnalysisSagaBusConfiguration
         }
 
         configurator.AddConsumer<ScanDeadLetterConsumer>();
+        configurator.AddConsumer<ScanExecutionConsumer>();
     }
 
     /// <summary>
@@ -65,6 +66,22 @@ public static class AnalysisSagaBusConfiguration
         }
 
         endpoint.ConfigureSaga<AnalysisSagaState>(context);
+    }
+
+    /// <summary>
+    /// Scanner-Ausführungs-Endpoint (Ticket 05): Retry (exponentiell + Jitter, REQ-22) —
+    /// nach dem Limit verschiebt der Broker auf <c>ossp.scan-requested_error</c> (TC-16).
+    /// Keine EF-Outbox nötig: Der Consumer hält keinen lokalen Zustand; das
+    /// ScanCompleted-Publish ist selbst der fachliche Abschluss (Fehler → Fault → Retry → DLQ).
+    /// </summary>
+    public static void ConfigureScanExecutionEndpoint(
+        IReceiveEndpointConfigurator endpoint,
+        IBusRegistrationContext context,
+        OsspRetryOptions retryOptions)
+    {
+        endpoint.UseMessageRetry(r => r.Intervals(
+            OsspBusConventions.JitteredExponentialIntervals(retryOptions.Limit, retryOptions.MinDelay, retryOptions.MaxDelay)));
+        endpoint.ConfigureConsumer<ScanExecutionConsumer>(context);
     }
 
     /// <summary>Dead-Letter-Endpoint der Scanner-Error-Queue (TC-16).</summary>
