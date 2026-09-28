@@ -57,6 +57,9 @@ var webui = builder.AddProject<Projects.OfficeSelfSigningPortal_WebUI>("webui")
 
 var workerService = builder.AddProject<Projects.OfficeSelfSigningPortal_WorkerService>("workerservice")
     .WithReference(workerDb)
+    // Lesender Artefakt-Zugriff für den Scan (Ticket 05): Der WorkerService liest die
+    // Blobs der Ingestion aus der Portal-DB (read-only, parametrisiert — kein EF-Pfad).
+    .WithReference(portalDb)
     .WithReference(rabbitmq)
     .WaitFor(postgres)
     .WaitFor(rabbitmq);

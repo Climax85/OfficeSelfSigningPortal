@@ -36,6 +36,9 @@
     <ProjectReference Include="..\..\src\OfficeSelfSigningPortal.WebUI\OfficeSelfSigningPortal.WebUI.csproj" />
     <ProjectReference Include="..\..\src\OfficeSelfSigningPortal.WorkerService\OfficeSelfSigningPortal.WorkerService.csproj" />
     <ProjectReference Include="..\..\src\OfficeSelfSigningPortal.SigningService\OfficeSelfSigningPortal.SigningService.csproj" />
+    <ProjectReference Include="..\OfficeSelfSigningPortal.TestSupport\OfficeSelfSigningPortal.TestSupport.csproj" />
   </ItemGroup>
 
+  <!-- yara-x-Native-Binary in den Output kopieren (Probing-Pfad, siehe Zieldatei). -->
+  <Import Project="..\..\src\OfficeSelfSigningPortal.WorkerService\YaraXNative.targets" />
 </Project>

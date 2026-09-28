@@ -13,10 +13,21 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="DefenceTechSecurity.Yarax" Version="1.1.0" />
+    <PackageReference Include="DefenceTechSecurity.Yarax.Native" Version="1.15.0" />
     <PackageReference Include="MassTransit" Version="8.5.7" />
     <PackageReference Include="MassTransit.EntityFrameworkCore" Version="8.5.7" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.5.7" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageReference Include="OpenMcdf" Version="2.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Kuratiertes YARA-Regelwerk (TM-05) — wird mit in das Ausgabeverzeichnis kopiert. -->
+    <Content Include="Scanning\rules\*.yar">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>
@@ -27,4 +38,6 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
   </ItemGroup>
 
+  <!-- yara-x-Native-Binary in den Output kopieren (Probing-Pfad, siehe Zieldatei). -->
+  <Import Project="YaraXNative.targets" />
 </Project>
