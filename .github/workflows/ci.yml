@@ -22,7 +22,7 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
-      - name: Tests (Trait-Filter: ohne langsame Integrationstests)
+      - name: "Tests (Trait-Filter: ohne langsame Integrationstests)"
         run: dotnet test --configuration Release --no-build --filter "Category!=Integration"
 
   integration-tests:
@@ -42,7 +42,7 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
-      - name: Integrationstests (Trait-Filter: Category=Integration)
+      - name: "Integrationstests (Trait-Filter: Category=Integration)"
         run: dotnet test --configuration Release --no-build --filter "Category=Integration"
 
   secret-scan:
