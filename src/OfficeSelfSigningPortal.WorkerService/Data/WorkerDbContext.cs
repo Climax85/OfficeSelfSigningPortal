@@ -7,19 +7,17 @@ namespace OfficeSelfSigningPortal.WorkerService.Data;
 
 /// <summary>
 /// DbContext des WorkerService (fachlicher Kontext Analyse/Saga). Hält die
-/// Saga-Instanz, die Übergangs-Audit-Einträge (REQ-18; Hash-Kette liefert Ticket 06)
-/// und die MassTransit-Outbox-Tabellen (REQ-11, TM-06).
+/// Saga-Instanz und die MassTransit-Outbox-Tabellen (REQ-11, TM-06). Der
+/// Übergangs-Audit wurde mit Ticket 06 in den konsolidierten Audit-Trail
+/// (Ossp.Audit, portal-DB) überführt.
 /// </summary>
 public class WorkerDbContext(DbContextOptions<WorkerDbContext> options) : DbContext(options)
 {
     public DbSet<AnalysisSagaState> SagaStates => Set<AnalysisSagaState>();
 
-    public DbSet<SagaAuditEntry> SagaAuditEntries => Set<SagaAuditEntry>();
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<AnalysisSagaState>(ConfigureAnalysisSagaState);
-        modelBuilder.ApplyConfiguration(new SagaAuditEntryMap());
         modelBuilder.AddOutboxStateEntity();
         modelBuilder.AddOutboxMessageEntity();
     }
@@ -35,19 +33,5 @@ public class WorkerDbContext(DbContextOptions<WorkerDbContext> options) : DbCont
         entity.Property(x => x.ContentType).HasMaxLength(16);
         entity.Property(x => x.ContentSha256).HasMaxLength(64);
         entity.HasIndex(x => x.ReceivedAt);
-    }
-}
-
-/// <summary>Übergangs-Audit (Anhang B, REQ-18) — Hash-Kette und Append-only erzeugt Ticket 06.</summary>
-public sealed class SagaAuditEntryMap : IEntityTypeConfiguration<SagaAuditEntry>
-{
-    public void Configure(EntityTypeBuilder<SagaAuditEntry> entity)
-    {
-        entity.ToTable("saga_audit_entries");
-        entity.HasKey(x => x.Id);
-        entity.Property(x => x.Zustand).HasMaxLength(64);
-        entity.Property(x => x.Ereignis).HasMaxLength(512);
-        entity.Property(x => x.Aktor).HasMaxLength(256);
-        entity.HasIndex(x => x.JobId);
     }
 }

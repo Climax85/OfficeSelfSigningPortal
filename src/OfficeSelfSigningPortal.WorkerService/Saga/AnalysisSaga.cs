@@ -1,7 +1,20 @@
+using System.Text.Json;
 using MassTransit;
 using Ossp.Contracts;
 
 namespace OfficeSelfSigningPortal.WorkerService.Saga;
+
+/// <summary>
+/// Persistierte Evidenz des Auto-Signings im Audit-Trail (TM-08, REQ-13, AK-13):
+/// Score, ScoreVersion, Findings und EngineStates des auslösenden Clean-Scans —
+/// zusammen mit <see cref="SignMacroRequested.RequestedBy">system:auto-sign</see>
+/// bleibt der Vorgang vollständig rekonstruierbar.
+/// </summary>
+public sealed record AutoSignEvidence(
+    int Score,
+    string ScoreVersion,
+    IReadOnlyList<ScanFinding> Findings,
+    IReadOnlyList<EngineResult> Engines);
 
 /// <summary>
 /// AnalysisSaga — persistierte State Machine des Analyseauftrags (Anhang B, verbindlich:
@@ -151,7 +164,13 @@ public sealed class AnalysisSaga : MassTransitStateMachine<AnalysisSagaState>
                         SagaStateNames.SignierungAngefragt,
                         $"Scan Clean (Score {ctx.Message.Score}, {ctx.Message.ScoreVersion}) — Auto-Signierung angefragt",
                         "system:auto-sign",
-                        null);
+                        // Vollständige Auto-Signing-Evidenz (TM-08, REQ-13): Findings, Score,
+                        // ScoreVersion und EngineStates machen den Vorgang rekonstruierbar.
+                        JsonSerializer.Serialize(new AutoSignEvidence(
+                            ctx.Message.Score,
+                            ctx.Message.ScoreVersion,
+                            ctx.Message.Findings,
+                            ctx.Message.Engines)));
                 })
                 .TransitionTo(SignierungAngefragt),
             When(ScanErgebnisEingegangen, ctx => ctx.Message.Verdict is Verdict.Suspicious or Verdict.Inconclusive)

@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Ossp.Contracts\Ossp.Contracts.csproj" />
+    <ProjectReference Include="..\Ossp.Audit\Ossp.Audit.csproj" />
     <ProjectReference Include="..\OfficeSelfSigningPortal.ServiceDefaults\OfficeSelfSigningPortal.ServiceDefaults.csproj" />
   </ItemGroup>
 

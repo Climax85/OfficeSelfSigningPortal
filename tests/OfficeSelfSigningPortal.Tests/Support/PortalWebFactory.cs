@@ -19,5 +19,8 @@ public sealed class PortalWebFactory : WebApplicationFactory<App>
         // MassTransit im InMemory-Transport fahren (kein Broker im Seam S1);
         // Outbox-Tabellen liegen auf dem Test-PostgreSQL der S1-Fixtures.
         builder.UseSetting("OsspBus:Transport", "InMemory");
+        // Nur-AuthZ-Probes greifen nie auf die Datenbank zu (kein Kontainer im
+        // Fixture) — Dummy-Connection-String, die harte Startprüfung greift trotzdem.
+        builder.UseSetting("ConnectionStrings:portal", "Host=unused.invalid;Database=probe-only;Username=probe;Password=probe");
     }
 }

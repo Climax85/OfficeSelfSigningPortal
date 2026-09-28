@@ -68,6 +68,10 @@ var signingService = builder.AddProject<Projects.OfficeSelfSigningPortal_Signing
     .WithReference(signingDb)
     // TM-19: Der Guard verifiziert den Saga-Status read-only gegen den Saga-State-Store.
     .WithReference(workerDb, connectionName: "sagastate")
-    .WaitFor(postgres);
+    // Ticket 06: Guard-Ablehnungen (AK-39) schreiben in den konsolidierten Audit-Trail.
+    .WithReference(portalDb)
+    .WithReference(rabbitmq)
+    .WaitFor(postgres)
+    .WaitFor(rabbitmq);
 
 builder.Build().Run();

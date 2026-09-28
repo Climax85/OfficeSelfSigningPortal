@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\OfficeSelfSigningPortal.WorkerService\OfficeSelfSigningPortal.WorkerService.csproj" />
     <ProjectReference Include="..\..\src\OfficeSelfSigningPortal.SigningService\OfficeSelfSigningPortal.SigningService.csproj" />
+    <ProjectReference Include="..\..\src\Ossp.Audit\Ossp.Audit.csproj" />
   </ItemGroup>
 
 </Project>

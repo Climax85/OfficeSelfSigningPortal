@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using OfficeSelfSigningPortal.SigningService;
 using OfficeSelfSigningPortal.SigningService.Data;
 using OfficeSelfSigningPortal.SigningService.Messaging;
+using Ossp.Audit;
 using Ossp.Contracts;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -12,10 +13,11 @@ builder.AddServiceDefaults();
 builder.Services.AddDbContext<SigningDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("signing")));
 
-// Vorfalls-Protokoll des Guards über DbContext-Factory (siehe EfSigningIncidentWriter).
-builder.Services.AddDbContextFactory<SigningDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("signing")));
-builder.Services.AddSingleton<ISigningIncidentWriter, EfSigningIncidentWriter>();
+// Audit-Trail (REQ-18): Guard-Ablehnungen (AK-39) schreiben append-only in die
+// gemeinsame SHA-256-Hash-Kette der portal-DB (Ticket 06).
+builder.Services.AddAuditTrail(builder.Configuration.GetConnectionString("portal")
+    ?? throw new InvalidOperationException(
+        "Connection String 'portal' fehlt — bitte Aspire-AppHost (Referenz auf die Portal-Datenbank) oder Konfiguration prüfen."));
 
 // Defense-in-Depth (TM-19): Der Guard liest den Saga-Status read-only aus dem
 // Saga-State-Store. Ohne konfigurierten Store startet der Dienst nicht — ein

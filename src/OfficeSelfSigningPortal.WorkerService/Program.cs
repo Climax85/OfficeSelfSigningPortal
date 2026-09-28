@@ -6,6 +6,7 @@ using OfficeSelfSigningPortal.WorkerService.Messaging;
 using OfficeSelfSigningPortal.WorkerService.Saga;
 using OfficeSelfSigningPortal.WorkerService.Scanning;
 using OfficeSelfSigningPortal.WorkerService.Scanning.Vba;
+using Ossp.Audit;
 using Ossp.Contracts;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -15,10 +16,14 @@ builder.AddServiceDefaults();
 builder.Services.AddDbContext<WorkerDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("worker")));
 
-// Saga-Audit: synchroner Writer über DbContext-Factory (siehe EfSagaAuditWriter).
-builder.Services.AddDbContextFactory<WorkerDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("worker")));
-builder.Services.AddSingleton<ISagaAuditWriter, EfSagaAuditWriter>();
+// portal-DB-Verbindung (Artefakt-Speicher lesen, Audit-Trail schreiben).
+var portalConnectionString = builder.Configuration.GetConnectionString("portal")
+    ?? throw new InvalidOperationException(
+        "Connection String 'portal' fehlt — der Scan benötigt lesenden Zugriff auf den Artefakt-Speicher der Ingestion (Aspire-AppHost prüfen).");
+
+// Saga-Audit: Übergänge in den konsolidierten Audit-Trail (Ticket 06, REQ-18).
+builder.Services.AddAuditTrail(portalConnectionString);
+builder.Services.AddSingleton<ISagaAuditWriter, SagaAuditTrailWriter>();
 
 builder.Services.AddOptions<OsspRetryOptions>().BindConfiguration(OsspRetryOptions.SectionName);
 
@@ -44,9 +49,6 @@ if (scanEngines.AmsiEnabled)
 
 builder.Services.AddSingleton<ScanOrchestrator>();
 
-var portalConnectionString = builder.Configuration.GetConnectionString("portal")
-    ?? throw new InvalidOperationException(
-        "Connection String 'portal' fehlt — der Scan benötigt lesenden Zugriff auf den Artefakt-Speicher der Ingestion (Aspire-AppHost prüfen).");
 builder.Services.AddSingleton<IArtifactBlobStore>(_ => new PostgresArtifactBlobStore(portalConnectionString));
 
 // Transportwahl: Produktion/Aspire = RabbitMQ; Test-Suites setzen OsspBus:Transport=InMemory.
