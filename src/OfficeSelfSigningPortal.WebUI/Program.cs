@@ -7,9 +7,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using OfficeSelfSigningPortal.WebUI.Authentication;
 using OfficeSelfSigningPortal.WebUI.Authentication.Testing;
+using OfficeSelfSigningPortal.WebUI.Audit;
 using OfficeSelfSigningPortal.WebUI.Components;
 using OfficeSelfSigningPortal.WebUI.Data;
 using OfficeSelfSigningPortal.WebUI.Ingestion;
+using Ossp.Audit;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +22,13 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddDbContext<PortalDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("portal")));
+
+// Audit-Trail (REQ-18): append-only, SHA-256-Hash-Kette in der portal-DB (Ticket 06).
+// Upload-Ereignisse schreibt die Ingestion, Saga-Übergänge der WorkerService und
+// Guard-Ablehnungen der SigningService in dieselbe Kette.
+builder.Services.AddAuditTrail(builder.Configuration.GetConnectionString("portal")
+    ?? throw new InvalidOperationException(
+        "Connection String 'portal' fehlt — bitte Aspire-AppHost oder Konfiguration prüfen."));
 
 builder.Services.AddOptions<IngestionOptions>().BindConfiguration(IngestionOptions.SectionName);
 builder.Services.AddScoped<SubmissionService>();
@@ -131,6 +140,7 @@ app.UseAntiforgery();
 
 app.MapDefaultEndpoints();
 app.MapSubmissionEndpoints();
+app.MapAuditEndpoints();
 
 if (useTestAuthHandler)
 {

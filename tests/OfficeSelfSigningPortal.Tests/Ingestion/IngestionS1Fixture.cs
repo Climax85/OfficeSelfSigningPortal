@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OfficeSelfSigningPortal.Tests.Support;
 using OfficeSelfSigningPortal.WebUI.Data;
+using Ossp.Audit;
 using Xunit;
 
 namespace OfficeSelfSigningPortal.Tests.Ingestion;
@@ -25,6 +26,10 @@ public sealed class IngestionS1Fixture : IAsyncLifetime
         await using var scope = Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
         await db.Database.MigrateAsync();
+
+        // Upload schreibt seit Ticket 06 Audit-Einträge (REQ-18) — Audit-Schema mitspielen.
+        var auditDb = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
+        await auditDb.Database.MigrateAsync();
     }
 
     public async Task DisposeAsync()

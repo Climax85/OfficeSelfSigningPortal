@@ -1,4 +1,5 @@
 using MassTransit;
+using Ossp.Audit;
 using Ossp.Contracts;
 
 namespace OfficeSelfSigningPortal.SigningService.Messaging;
@@ -8,14 +9,14 @@ namespace OfficeSelfSigningPortal.SigningService.Messaging;
 /// <see cref="SignMacroRequested"/> wird nur dann akzeptiert, wenn der persistierte
 /// Saga-Status des Vorgangs <c>SignierungAngefragt</c> ist — unabhängig davon, was
 /// die Nachricht selbst behauptet. Andernfalls: Ablehnung, keine Signatur,
-/// protokollierter Vorfall plus <see cref="JobFailed"/> (Stage "signing", nicht
-/// retryable). Die eigentliche Signier-Pipeline (VbaProjectSigner, ContentSha256-
-/// Verifizierung gegen den Blob) liefert Ticket 08; dieser Guard ist ihr
-/// unverrückbarer Vordertor.
+/// Audit-Eintrag (konsolidierter Audit-Trail, Ticket 06) plus
+/// <see cref="JobFailed"/> (Stage "signing", nicht retryable). Die eigentliche
+/// Signier-Pipeline (VbaProjectSigner, ContentSha256-Verifizierung gegen den Blob)
+/// liefert Ticket 08; dieser Guard ist ihr unverrückbarer Vordertor.
 /// </summary>
 public sealed class SignMacroRequestGuardConsumer(
     ISagaStateReader sagaStateReader,
-    ISigningIncidentWriter incidentWriter,
+    IAuditTrailWriter auditTrail,
     ILogger<SignMacroRequestGuardConsumer> logger) : IConsumer<SignMacroRequested>
 {
     public async Task Consume(ConsumeContext<SignMacroRequested> context)
@@ -31,10 +32,22 @@ public sealed class SignMacroRequestGuardConsumer(
                 message.JobId,
                 state ?? "<keine Saga>");
 
-            await incidentWriter.RecordAsync(
-                message.JobId,
-                $"SignMacroRequested abgelehnt: Saga-Status {(state ?? "<keine Saga>")}",
-                context.CancellationToken);
+            // Ablehnung ist sicherheitsrelevant (AK-39) und gehört in den Audit-Trail.
+            // Best-effort: Ein Protokoll-Fehlversuch darf die Ablehnung selbst nicht kippen.
+            try
+            {
+                await auditTrail.AppendAsync(
+                    message.JobId,
+                    AuditCategories.Guard,
+                    $"SignMacroRequested abgelehnt: Saga-Status {(state ?? "<keine Saga>")}",
+                    "system:signing-guard",
+                    detail: null,
+                    context.CancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Guard-Ablehnung für JobId {JobId} konnte nicht auditiert werden", message.JobId);
+            }
 
             await context.Publish(new JobFailed(
                 message.JobId,
