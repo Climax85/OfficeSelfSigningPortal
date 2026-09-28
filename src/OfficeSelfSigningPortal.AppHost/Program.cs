@@ -1,4 +1,5 @@
 using System.Reflection;
+using Aspire.Hosting.ApplicationModel;
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -46,6 +47,8 @@ var mailpit = builder.AddContainer("mailpit", "axllent/mailpit", "latest")
 var webui = builder.AddProject<Projects.OfficeSelfSigningPortal_WebUI>("webui")
     .WithReference(portalDb)
     .WithReference(rabbitmq)
+    .WithEnvironment("PortalAuth__Authority",
+        ReferenceExpression.Create($"{keycloak.GetEndpoint("http")}/realms/portal-dev"))
     .WaitFor(postgres)
     .WaitFor(rabbitmq);
 

@@ -62,6 +62,31 @@ public class AppHostResourceTests
     }
 
     [Fact]
+    public async Task AppHost_WebUI_erhaelt_OIDC_Authority_aus_dem_Keycloak_Endpoint()
+    {
+        // Arrange
+        var appBuilder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.AppHost>(
+            ParameterArgs.Split(';'));
+
+        // Act
+        var webui = appBuilder.Resources.OfType<ProjectResource>().Single(p => p.Name == "webui");
+        var context = new EnvironmentCallbackContext(
+            new DistributedApplicationExecutionContext(DistributedApplicationOperation.Run),
+            webui);
+        foreach (var annotation in webui.Annotations.OfType<EnvironmentCallbackAnnotation>())
+        {
+            await annotation.Callback(context);
+        }
+
+        // Assert — generische OIDC-Verdrahtung (REQ-09, ADR-0001), keine Provider-URLs im Code.
+        // Der Wert ist eine ReferenceExpression (Keycloak-Endpoint + Realm-Pfad), die erst zur
+        // Laufzeit aufgelöst wird; geprüft wird der Format-String.
+        var authority = Assert.Single(context.EnvironmentVariables, kv => kv.Key == "PortalAuth__Authority");
+        var expression = Assert.IsType<ReferenceExpression>(authority.Value);
+        Assert.Contains("realms/portal-dev", expression.Format, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task AppHost_Keycloak_und_MailPit_sind_Container_ohne_Dev_Credentials_im_Repo()
     {
         // Arrange

@@ -1,0 +1,20 @@
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using OfficeSelfSigningPortal.WebUI.Components;
+
+namespace OfficeSelfSigningPortal.Tests.Support;
+
+/// <summary>
+/// Seam S1 (AK-34): startet die WebUI mit dem Test-AuthHandler als Fake-IdP.
+/// Aktiviert denselben Konfigurationsschalter wie die produktive Verdrahtung,
+/// ersetzt aber keinen Produktivcode. <see cref="App"/> dient nur als
+/// Assembly-Marker für die WebUI (beide Assemblys haben einen globalen
+/// <c>Program</c>-Typ).
+/// </summary>
+public sealed class PortalWebFactory : WebApplicationFactory<App>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseSetting("Auth:UseTestAuthHandler", "true");
+    }
+}

@@ -46,11 +46,13 @@ public static class Extensions
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        app.MapHealthChecks("/health");
+        // Health Checks sind reine Infrastruktur (Aspire/Liveness) und bleiben anonym,
+        // damit die FallbackPolicy (RequireAuthenticatedUser) sie nicht blockiert.
+        app.MapHealthChecks("/health").AllowAnonymous();
         app.MapHealthChecks("/alive", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
         {
             Predicate = r => r.Tags.Contains("live")
-        });
+        }).AllowAnonymous();
 
         return app;
     }
