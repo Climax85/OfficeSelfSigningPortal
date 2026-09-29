@@ -1,0 +1,210 @@
+@page "/vorgang/{JobId:guid}"
+@attribute [Authorize]
+@implements IDisposable
+@inject ISagaReviewReader SagaReader
+@inject SubmissionService Submissions
+@inject ReviewService Reviews
+@inject Ossp.Audit.AuditDbContext AuditDb
+@inject IAuthorizationService Authorization
+@inject ILogger<Vorgang> Logger
+@inject NavigationManager Navigation
+
+<PageTitle>Vorgang @JobId</PageTitle>
+
+<h1>Vorgang</h1>
+
+@if (_error is not null)
+{
+    <p class="error" role="alert">@_error</p>
+}
+else if (_status is null)
+{
+    <p>Status wird geladen …</p>
+}
+else
+{
+    <dl class="status">
+        <dt>Vorgangs-ID</dt>
+        <dd>@JobId</dd>
+        <dt>Datei</dt>
+        <dd>@_fileName</dd>
+        <dt>Status</dt>
+        <dd><span class="badge state">@_status</span></dd>
+        @if (_lastEvent is not null)
+        {
+            <dt>Letztes Ereignis</dt>
+            <dd>@_lastEvent</dd>
+        }
+        @if (_reason is not null)
+        {
+            <dt>Grund</dt>
+            <dd>@_reason</dd>
+        }
+    </dl>
+
+    <div class="form-row">
+        <a class="button" href="@($"/api/submissions/{JobId}/original")">Original herunterladen</a>
+        @if (_signedArtifactId is not null)
+        {
+            <a class="button" href="@($"/api/submissions/{JobId}/signed")">Signierte Datei herunterladen</a>
+        }
+    </div>
+
+    @if (_status == RueckfrageState && _isOwner)
+    {
+        <section class="panel">
+            <h2>Rückfrage</h2>
+            @if (_reason is not null)
+            {
+                <p><strong>Frage des Bearbeiters:</strong> @_reason</p>
+            }
+            <textarea @bind="_answer" rows="4" maxlength="@MaxAnswerLength" placeholder="Antwort …"></textarea>
+            <button class="primary" @onclick="SubmitAnswerAsync" disabled="@(_answering || string.IsNullOrWhiteSpace(_answer))">
+                Antwort übermitteln
+            </button>
+            @if (_answerInfo is not null)
+            {
+                <p class="info">@_answerInfo</p>
+            }
+        </section>
+    }
+}
+
+@code {
+    private const string RueckfrageState = Ossp.Contracts.SagaStateNames.RueckfrageAusstehend;
+    private const int MaxAnswerLength = 4000;
+
+    [Parameter]
+    public Guid JobId { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private HubConnection? _hub;
+    private string? _status;
+    private string? _reason;
+    private string? _lastEvent;
+    private string? _fileName;
+    private Guid? _signedArtifactId;
+    private bool _isOwner;
+    private string? _error;
+    private string? _answer;
+    private string? _answerInfo;
+    private bool _answering;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatusAsync();
+        if (_status is null || _error is not null)
+        {
+            return;
+        }
+
+        // Live-Status ohne Reload (AK-02): SignalR-Watch; eingehende Änderungen
+        // ersetzen die lokale Anzeige — zwei Betrachter sehen denselben Stand (AK-20).
+        _hub = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri(JobStatusHub.Route))
+            .WithAutomaticReconnect()
+            .Build();
+        _hub.On<JobStatusChangedEvent>(
+            JobStatusHub.JobStatusChangedMethod,
+            async changed =>
+            {
+                if (changed.JobId != JobId)
+                {
+                    return;
+                }
+
+                _status = changed.Status;
+                _signedArtifactId = changed.SignedArtifactId;
+                // Grund/Ereignis erneut aus dem Audit-Trail anreichern (AK-05).
+                await LoadEventDetailsAsync();
+                await InvokeAsync(StateHasChanged);
+            });
+        await _hub.StartAsync();
+        await _hub.InvokeAsync(JobStatusHub.WatchJobMethodName, JobId);
+    }
+
+    private async Task LoadStatusAsync()
+    {
+        var user = (await AuthenticationState).User;
+        var vorgang = await SagaReader.GetVorgangAsync(JobId, CancellationToken.None);
+        var job = vorgang is null
+            ? await Submissions.FindAsync(JobId, CancellationToken.None)
+            : null;
+
+        var submittedBy = vorgang?.SubmittedBy ?? job?.SubmittedBy;
+        if (submittedBy is null)
+        {
+            _error = "Vorgang nicht gefunden.";
+            return;
+        }
+
+        if (!VorgangAccess.CanView(user, submittedBy))
+        {
+            _error = "Kein Zugriff auf diesen Vorgang.";
+            return;
+        }
+
+        _isOwner = string.Equals(
+            user.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier),
+            submittedBy,
+            StringComparison.Ordinal);
+        _status = vorgang?.CurrentState ?? job!.Status.ToString();
+        _fileName = vorgang?.OriginalFileName ?? job!.OriginalFileName;
+        _signedArtifactId = vorgang?.SignedArtifactId;
+        await LoadEventDetailsAsync();
+        if (_reason is null)
+        {
+            _reason = job?.StatusReason;
+        }
+    }
+
+    private async Task LoadEventDetailsAsync()
+    {
+        var letztes = await AuditDb.AuditEntries
+            .Where(e => e.JobId == JobId && e.Category == Ossp.Audit.AuditCategories.Saga)
+            .OrderByDescending(e => e.Id)
+            .Select(e => new { e.Ereignis, e.Detail })
+            .FirstOrDefaultAsync();
+        _lastEvent = letztes?.Ereignis;
+        _reason = letztes?.Detail ?? _reason;
+    }
+
+    private async Task SubmitAnswerAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_answer))
+        {
+            return;
+        }
+
+        _answering = true;
+        _answerInfo = null;
+        try
+        {
+            var userId = (await AuthenticationState).User.FindFirstValue(
+                System.Security.Claims.ClaimTypes.NameIdentifier)!;
+            // Der XSS-Filter (AK-49) sitzt im ReviewService selbst.
+            await Reviews.RecordAnswerAsync(JobId, _answer, userId, CancellationToken.None);
+            _answer = null;
+            _answerInfo = "Antwort übermittelt — der Vorgang ist zurück im Review.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Rückfrage-Antwort für JobId {JobId} schlug fehl", JobId);
+            _answerInfo = "Die Antwort konnte nicht übermittelt werden.";
+        }
+        finally
+        {
+            _answering = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_hub is not null)
+        {
+            _ = _hub.DisposeAsync();
+        }
+    }
+}

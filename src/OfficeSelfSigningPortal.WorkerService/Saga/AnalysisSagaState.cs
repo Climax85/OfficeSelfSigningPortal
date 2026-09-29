@@ -24,4 +24,10 @@ public sealed class AnalysisSagaState : SagaStateMachineInstance
     public string ContentType { get; set; } = string.Empty;
     public long FileSizeBytes { get; set; }
     public DateTimeOffset ReceivedAt { get; set; }
+
+    /// <summary>
+    /// Referenz auf den signierten Blob (neue Artefakt-Zeile, Ticket 08) — dauerhafte
+    /// Vorgang → Signatur-Zuordnung für Download (TC-27/AK-04, T09) und Retention (T11).
+    /// </summary>
+    public Guid? SignedArtifactId { get; set; }
 }

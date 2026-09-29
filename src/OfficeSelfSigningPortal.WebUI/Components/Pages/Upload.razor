@@ -1,0 +1,115 @@
+@page "/upload"
+@attribute [Authorize]
+@inject SubmissionService Submissions
+@inject IAuthorizationService Authorization
+@inject IOptions<IngestionOptions> IngestionConfig
+@inject ILogger<Upload> Logger
+@inject NavigationManager Navigation
+
+<PageTitle>Datei einreichen</PageTitle>
+
+<h1>Datei einreichen</h1>
+
+<AuthorizeView Roles="Einreicher">
+    <Authorized>
+        <p>
+            Makro-Datei (.xlsm/.docm/.pptm, maximal
+            @(IngestionConfig.Value.MaxFileSizeBytes / 1024 / 1024) MB) einreichen.
+            Der Vorgang wird analysiert und — bei sauberem Befund — signiert.
+        </p>
+
+        <div class="form-row">
+            <InputFile OnChange="OnFileSelected" accept=".xlsm,.docm,.pptm" />
+            <button class="primary" @onclick="SubmitAsync" disabled="@(_selected is null || _uploading)">
+                @(_uploading ? "Wird eingereicht …" : "Einreichen")
+            </button>
+        </div>
+
+        @if (_error is not null)
+        {
+            <p class="error" role="alert">@_error</p>
+        }
+    </Authorized>
+    <NotAuthorized>
+        <p class="error">Für das Einreichen ist die Rolle „Einreicher“ erforderlich.</p>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private IBrowserFile? _selected;
+    private bool _uploading;
+    private string? _error;
+
+    private void OnFileSelected(InputFileChangeEventArgs args)
+    {
+        _selected = args.File;
+        _error = null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        // Serverseitige Policy-Prüfung (TM-17): Die Komponente läuft serverseitig,
+        // die Rollenentscheidung wird nicht dem Client überlassen.
+        var authz = await Authorization.AuthorizeAsync(
+            (await AuthenticationState).User, policyName: PortalAuthPolicies.Submitter);
+        if (!authz.Succeeded)
+        {
+            _error = "Für das Einreichen ist die Rolle „Einreicher“ erforderlich.";
+            return;
+        }
+
+        _uploading = true;
+        _error = null;
+        try
+        {
+            var maxBytes = IngestionConfig.Value.MaxFileSizeBytes;
+            byte[] content;
+            var fileName = Path.GetFileName(_selected.Name);
+            try
+            {
+                // +1 Byte Puffer, damit die Validierung (nicht der Stream) das Limit
+                // durchsetzt und den fachlichen Ablehnungsgrund liefert (AK-37).
+                await using var stream = _selected.OpenReadStream(maxBytes + 1);
+                using var memory = new MemoryStream();
+                await stream.CopyToAsync(memory);
+                content = memory.ToArray();
+            }
+            catch (IOException)
+            {
+                _error = $"Die Datei überschreitet das Größenlimit von {maxBytes / 1024 / 1024} MB.";
+                return;
+            }
+
+            var userId = (await AuthenticationState).User.FindFirstValue(
+                System.Security.Claims.ClaimTypes.NameIdentifier)!;
+            var outcome = await Submissions.SubmitAsync(fileName, content, userId, CancellationToken.None);
+
+            switch (outcome)
+            {
+                case SubmissionOutcome.SubmissionRejected rejected:
+                    _error = rejected.Reason;
+                    break;
+                case SubmissionOutcome.SubmissionStored stored:
+                    Navigation.NavigateTo($"/vorgang/{stored.JobId}");
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Upload von {FileName} schlug fehl", _selected.Name);
+            _error = "Der Upload ist technisch fehlgeschlagen. Bitte erneut versuchen.";
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+}

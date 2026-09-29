@@ -221,6 +221,9 @@ namespace OfficeSelfSigningPortal.WorkerService.Migrations
                     b.Property<DateTimeOffset>("ReceivedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("SignedArtifactId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("SubmittedBy")
                         .IsRequired()
                         .HasMaxLength(256)

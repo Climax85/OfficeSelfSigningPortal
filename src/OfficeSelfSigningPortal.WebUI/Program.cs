@@ -11,7 +11,10 @@ using OfficeSelfSigningPortal.WebUI.Authentication.Testing;
 using OfficeSelfSigningPortal.WebUI.Audit;
 using OfficeSelfSigningPortal.WebUI.Components;
 using OfficeSelfSigningPortal.WebUI.Data;
+using OfficeSelfSigningPortal.WebUI.Download;
 using OfficeSelfSigningPortal.WebUI.Ingestion;
+using OfficeSelfSigningPortal.WebUI.LiveStatus;
+using OfficeSelfSigningPortal.WebUI.Notifications;
 using OfficeSelfSigningPortal.WebUI.Review;
 using Ossp.Audit;
 
@@ -34,8 +37,19 @@ builder.Services.AddAuditTrail(builder.Configuration.GetConnectionString("portal
 
 builder.Services.AddOptions<IngestionOptions>().BindConfiguration(IngestionOptions.SectionName);
 builder.Services.AddOptions<ReviewOptions>().BindConfiguration(ReviewOptions.SectionName);
+builder.Services.AddOptions<LiveStatusOptions>().BindConfiguration(LiveStatusOptions.SectionName);
+builder.Services.AddOptions<DownloadOptions>().BindConfiguration(DownloadOptions.SectionName);
+builder.Services.AddOptions<NotificationOptions>().BindConfiguration(NotificationOptions.SectionName);
 builder.Services.AddScoped<SubmissionService>();
 builder.Services.AddScoped<ReviewService>();
+builder.Services.AddScoped<DownloadService>();
+builder.Services.AddScoped<NotificationService>();
+
+// Live-Status-Kanal (IF-03, AK-02/AK-20): SignalR-Hub + Single-Replica-Wächter,
+// der den Saga-State-Store pollt und Änderungen pushed (REQ-20 — ohne Backplane).
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<StatusWatchTracker>();
+builder.Services.AddHostedService<StatusChangeNotifier>();
 
 // Rate-Limit des Rückfrage-Kanals (TM-02): Fixed-Window pro Nutzer, Partition
 // nach IdP-Identität — die Policy löst pro Request aus der Konfiguration auf.
@@ -177,6 +191,9 @@ app.MapDefaultEndpoints();
 app.MapSubmissionEndpoints();
 app.MapReviewEndpoints();
 app.MapAuditEndpoints();
+app.MapDownloadEndpoints();
+app.MapNotificationEndpoints();
+app.MapHub<JobStatusHub>(JobStatusHub.Route);
 
 if (useTestAuthHandler)
 {

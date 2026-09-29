@@ -15,6 +15,7 @@ namespace OfficeSelfSigningPortal.WebUI.Review;
 /// <param name="ContentType">"xlsm" | "docm" | "pptm" (Vertrag Anhang A).</param>
 /// <param name="FileSizeBytes">Größe der Upload-Datei.</param>
 /// <param name="ReceivedAt">Einreichzeit (Saga-Aufnahme, Basis der Alterungsanzeige).</param>
+/// <param name="SignedArtifactId">Referenz auf den signierten Blob (neue Artefakt-Zeile, Ticket 08) — gesetzt ab Zustand <c>Signiert</c> (Download, AK-04).</param>
 public sealed record SagaVorgangInfo(
     Guid JobId,
     string CurrentState,
@@ -22,7 +23,8 @@ public sealed record SagaVorgangInfo(
     string OriginalFileName,
     string ContentType,
     long FileSizeBytes,
-    DateTimeOffset ReceivedAt);
+    DateTimeOffset ReceivedAt,
+    Guid? SignedArtifactId);
 
 /// <summary>
 /// Lesezugriff der Review-API auf den Saga-State-Store. Implementierung ist

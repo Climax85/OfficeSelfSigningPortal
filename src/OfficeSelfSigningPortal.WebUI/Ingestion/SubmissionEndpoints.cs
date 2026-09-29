@@ -1,14 +1,25 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.EntityFrameworkCore;
 using OfficeSelfSigningPortal.WebUI.Authentication;
 using OfficeSelfSigningPortal.WebUI.Data;
+using OfficeSelfSigningPortal.WebUI.Review;
+using Ossp.Audit;
 
 namespace OfficeSelfSigningPortal.WebUI.Ingestion;
 
 using static SubmissionOutcome;
 
 /// <summary>API-Antworten des Submission-Endpunkts (verbindliche DTOs, englische Identifier).</summary>
-public sealed record SubmissionStatusResponse(Guid JobId, string Status, string? Reason);
+/// <param name="Reason">Fachlicher Grund (z. B. Ablehnungsgrund, AK-05) — Detail des jüngsten Saga-Audit-Eintrags.</param>
+/// <param name="LastEvent">Jüngster Saga-Ereignistext (Anhang-B-Übergang).</param>
+/// <param name="SignedArtifactId">Referenz auf den signierten Blob, sobald vorhanden (Download, AK-04).</param>
+public sealed record SubmissionStatusResponse(
+    Guid JobId,
+    string Status,
+    string? Reason,
+    string? LastEvent,
+    Guid? SignedArtifactId);
 
 public sealed record RejectionResponse(string Reason);
 
@@ -76,7 +87,7 @@ public static class SubmissionEndpoints
             SubmissionRejected rejected => Results.UnprocessableEntity(new RejectionResponse(rejected.Reason)),
             SubmissionStored stored => Results.Created(
                 $"/api/submissions/{stored.JobId}",
-                new SubmissionStatusResponse(stored.JobId, stored.Status.ToString(), stored.Reason)),
+                new SubmissionStatusResponse(stored.JobId, stored.Status.ToString(), stored.Reason, null, null)),
             _ => throw new InvalidOperationException($"Unerwarteter Ausgang: {outcome.GetType().Name}"),
         };
     }
@@ -85,21 +96,46 @@ public static class SubmissionEndpoints
         Guid jobId,
         ClaimsPrincipal user,
         SubmissionService submissions,
+        ISagaReviewReader sagaReader,
+        AuditDbContext auditDb,
         CancellationToken cancellationToken)
     {
         var job = await submissions.FindAsync(jobId, cancellationToken);
-        if (job is null)
+        var vorgang = await sagaReader.GetVorgangAsync(jobId, cancellationToken);
+
+        // Führend ist die Saga-Zeile (Anhang B); die Upload-Zeile bleibt Fallback für
+        // Vorgänge ohne Saga (makrofrei/korrupt — dort publiziert die Ingestion keine
+        // ScanRequested-Nachricht).
+        var submittedBy = vorgang?.SubmittedBy ?? job?.SubmittedBy;
+        if (submittedBy is null)
         {
             return Results.NotFound();
         }
 
-        // Einreicher dürfen nur eigene Vorgänge sehen (Vorgangsbezug bleibt am sub-Claim).
-        var currentUser = user.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!string.Equals(job.SubmittedBy, currentUser, StringComparison.Ordinal))
+        // Einsicht: Eigentümer, Bearbeiter oder Admin (serverseitig, TM-17). Die
+        // Erweiterung gegenüber reiner Eigentümerschaft ermöglicht den Review-
+        // Kontext und den Zwei-Betrachter-Fall (AK-20, TC-40).
+        if (!VorgangAccess.CanView(user, submittedBy))
         {
             return Results.Forbid();
         }
 
-        return Results.Ok(new SubmissionStatusResponse(job.JobId, job.Status.ToString(), job.StatusReason));
+        var status = vorgang?.CurrentState ?? job!.Status.ToString();
+
+        // AK-05: Ablehnungs-/Fehlergrund aus dem jüngsten Saga-Audit-Eintrag
+        // (Detail = z. B. Review-Kommentar oder Fehlerursache); Fallback auf den
+        // Grund der Upload-Zeile (Ingestion-Ablehnungen ohne Saga).
+        var letztesEreignis = await auditDb.AuditEntries.AsNoTracking()
+            .Where(e => e.JobId == jobId && e.Category == AuditCategories.Saga)
+            .OrderByDescending(e => e.Id)
+            .Select(e => new { e.Ereignis, e.Detail })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return Results.Ok(new SubmissionStatusResponse(
+            jobId,
+            status,
+            letztesEreignis?.Detail ?? job?.StatusReason,
+            letztesEreignis?.Ereignis,
+            vorgang?.SignedArtifactId));
     }
 }
