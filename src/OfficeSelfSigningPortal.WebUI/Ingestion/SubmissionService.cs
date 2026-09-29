@@ -2,6 +2,7 @@ using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using OfficeSelfSigningPortal.WebUI.Data;
+using Ossp.Audit;
 using Ossp.Contracts;
 
 namespace OfficeSelfSigningPortal.WebUI.Ingestion;
@@ -20,6 +21,7 @@ public sealed class SubmissionService(
     PortalDbContext db,
     IPublishEndpoint publishEndpoint,
     IOptions<IngestionOptions> options,
+    IAuditTrailWriter auditTrail,
     ILogger<SubmissionService> logger)
 {
     private const string MacroFreeHint = "Kein Makro enthalten: Die Datei ist makrofrei und muss nicht signiert werden.";
@@ -96,6 +98,24 @@ public sealed class SubmissionService(
         }
 
         await db.SaveChangesAsync(cancellationToken);
+
+        // Upload ist ein vorgangsrelevantes Ereignis (REQ-18, AK-48): append-only
+        // in die SHA-256-Hash-Kette (TM-04). Best-effort — ein Audit-Fehlversuch
+        // bricht den Upload nicht ab (Nachweislücke ist kettenbruch-sichtbar).
+        try
+        {
+            await auditTrail.AppendAsync(
+                scanRequested.JobId,
+                AuditCategories.Upload,
+                "Upload persistiert",
+                submittedBy,
+                originalFileName,
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Audit-Eintrag für Upload {JobId} konnte nicht geschrieben werden", scanRequested.JobId);
+        }
 
         if (verdict is Corrupt corruptVerdict)
         {

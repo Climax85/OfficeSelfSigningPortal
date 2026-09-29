@@ -1,0 +1,27 @@
+<Project>
+  <!--
+    yara-x-Native-Binary (DefenceTechSecurity.Yarax.Native) in den Output kopieren.
+    Das Native-Paket legt die Binaries unter runtimes/<rid>/native/<target-triple>/ ab —
+    außerhalb der Default-Probing-Pfade, daher dieser explizite Kopiermechanismus.
+    RID-Auswahl: expliziter RuntimeIdentifier gewinnt, sonst Betriebssystem-Default (x64).
+    ARM64-/Container-Publishes setzen den RID passend (Deployment-Profile, Ticket 12).
+  -->
+  <PropertyGroup>
+    <YaraXNativeRid Condition="'$(YaraXNativeRid)' == '' and '$(RuntimeIdentifier)' != '' and $([System.String]::Copy('$(RuntimeIdentifier)').Contains('win'))">win-x64</YaraXNativeRid>
+    <YaraXNativeRid Condition="'$(YaraXNativeRid)' == '' and '$(RuntimeIdentifier)' != '' and $([System.String]::Copy('$(RuntimeIdentifier)').Contains('linux'))">linux-x64</YaraXNativeRid>
+    <YaraXNativeRid Condition="'$(YaraXNativeRid)' == '' and '$(OS)' == 'Windows_NT'">win-x64</YaraXNativeRid>
+    <YaraXNativeRid Condition="'$(YaraXNativeRid)' == ''">linux-x64</YaraXNativeRid>
+    <YaraXNativeFile Condition="'$(YaraXNativeRid)' == 'win-x64'">yara_x_capi.dll</YaraXNativeFile>
+    <YaraXNativeFile Condition="'$(YaraXNativeRid)' != 'win-x64'">libyara_x_capi.so</YaraXNativeFile>
+  </PropertyGroup>
+
+  <Target Name="CopyYaraXNativeBinary" AfterTargets="Build">
+    <ItemGroup>
+      <YaraXNativeBinary Include="$(NuGetPackageRoot)defencetechsecurity.yarax.native\1.15.0\runtimes\$(YaraXNativeRid)\native\*\$(YaraXNativeFile)" />
+    </ItemGroup>
+    <Error
+      Condition="'@(YaraXNativeBinary)' == ''"
+      Text="yara-x-Native-Binary nicht gefunden: $(NuGetPackageRoot)defencetechsecurity.yarax.native/1.15.0/runtimes/$(YaraXNativeRid) (Restore fehlt?)." />
+    <Copy SourceFiles="@(YaraXNativeBinary)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

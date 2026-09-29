@@ -2,6 +2,7 @@ using MassTransit;
 using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using OfficeSelfSigningPortal.SigningService.Messaging;
+using Ossp.Audit;
 using Ossp.Contracts;
 
 namespace OfficeSelfSigningPortal.Tests.Saga;
@@ -16,17 +17,17 @@ public sealed class SignMacroRequestGuardTests : IAsyncLifetime
     private ServiceProvider _provider = null!;
     private ITestHarness _harness = null!;
     private FakeSagaStateReader _stateReader = null!;
-    private FakeSigningIncidentWriter _incidents = null!;
+    private FakeAuditTrailWriter _auditTrail = null!;
 
     public async Task InitializeAsync()
     {
         _stateReader = new FakeSagaStateReader();
-        _incidents = new FakeSigningIncidentWriter();
+        _auditTrail = new FakeAuditTrailWriter();
 
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<ISagaStateReader>(_stateReader);
-        services.AddSingleton<ISigningIncidentWriter>(_incidents);
+        services.AddSingleton<IAuditTrailWriter>(_auditTrail);
         services.AddMassTransitTestHarness(x =>
         {
             x.AddSigningGuard();
@@ -64,7 +65,9 @@ public sealed class SignMacroRequestGuardTests : IAsyncLifetime
             m.Context.Message.JobId == jobId
             && m.Context.Message.Stage == "signing"
             && !m.Context.Message.Retryable));
-        Assert.Contains(_incidents.Recorded, i => i.JobId == jobId);
+        var eintrag = Assert.Single(_auditTrail.Recorded, i => i.JobId == jobId);
+        Assert.Equal(AuditCategories.Guard, eintrag.Category);
+        Assert.Equal("system:signing-guard", eintrag.Aktor);
         Assert.DoesNotContain(_harness.Published.Select<SignMacroCompleted>(), m => m.Context.Message.JobId == jobId);
     }
 
@@ -81,7 +84,9 @@ public sealed class SignMacroRequestGuardTests : IAsyncLifetime
         // Assert
         Assert.True(await _harness.Published.Any<JobFailed>(m =>
             m.Context.Message.JobId == jobId && m.Context.Message.Stage == "signing"));
-        Assert.Contains(_incidents.Recorded, i => i.JobId == jobId);
+        var eintrag = Assert.Single(_auditTrail.Recorded, i => i.JobId == jobId);
+        Assert.Equal(AuditCategories.Guard, eintrag.Category);
+        Assert.Equal("system:signing-guard", eintrag.Aktor);
     }
 
     [Fact]
@@ -97,7 +102,7 @@ public sealed class SignMacroRequestGuardTests : IAsyncLifetime
         // Assert: keine Ablehnung, kein Vorfall (Übergabe an die Signier-Pipeline, Ticket 08)
         await Task.Delay(TimeSpan.FromMilliseconds(300));
         Assert.False(await _harness.Published.Any<JobFailed>(m => m.Context.Message.JobId == jobId));
-        Assert.DoesNotContain(_incidents.Recorded, i => i.JobId == jobId);
+        Assert.DoesNotContain(_auditTrail.Recorded, i => i.JobId == jobId);
         Assert.Equal(SagaStateNames.SignierungAngefragt, await _stateReader.GetSagaStateAsync(jobId, CancellationToken.None));
     }
 
@@ -117,13 +122,13 @@ public sealed class SignMacroRequestGuardTests : IAsyncLifetime
         public Task<string?> GetSagaStateAsync(Guid jobId, CancellationToken cancellationToken) => Task.FromResult(State);
     }
 
-    private sealed class FakeSigningIncidentWriter : ISigningIncidentWriter
+    private sealed class FakeAuditTrailWriter : IAuditTrailWriter
     {
-        public List<(Guid JobId, string Reason)> Recorded { get; } = [];
+        public List<(Guid JobId, string Category, string Ereignis, string Aktor)> Recorded { get; } = [];
 
-        public Task RecordAsync(Guid jobId, string reason, CancellationToken cancellationToken)
+        public Task AppendAsync(Guid jobId, string category, string ereignis, string aktor, string? detail, CancellationToken cancellationToken)
         {
-            Recorded.Add((jobId, reason));
+            Recorded.Add((jobId, category, ereignis, aktor));
             return Task.CompletedTask;
         }
     }

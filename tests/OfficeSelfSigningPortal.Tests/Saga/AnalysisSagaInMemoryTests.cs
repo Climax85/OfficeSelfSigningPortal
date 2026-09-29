@@ -273,12 +273,17 @@ public sealed class AnalysisSagaInMemoryTests : IAsyncLifetime
         // Arrange
         var jobId = Guid.NewGuid();
         await SignierungAngefragtAsync(jobId);
+        var signedArtifactId = Guid.NewGuid();
 
         // Act
-        await _harness.Bus.Publish(new SignMacroCompleted(jobId, Guid.NewGuid(), DateTimeOffset.UtcNow));
+        await _harness.Bus.Publish(new SignMacroCompleted(jobId, signedArtifactId, DateTimeOffset.UtcNow));
 
         // Assert
         await AssertSagaInStateAsync(jobId, _machine.Signiert);
+
+        // Assert: SignedArtifactId persistiert (Download TC-27/AK-04 via T09, Retention T11)
+        var matches = await _sagaHarness.Match(s => s.SignedArtifactId == signedArtifactId);
+        Assert.Contains(jobId, matches);
     }
 
     [Fact]

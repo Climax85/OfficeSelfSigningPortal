@@ -46,6 +46,9 @@ var mailpit = builder.AddContainer("mailpit", "axllent/mailpit", "latest")
 
 var webui = builder.AddProject<Projects.OfficeSelfSigningPortal_WebUI>("webui")
     .WithReference(portalDb)
+    // Ticket 07: Die Review-API liest offene Vorgänge read-only aus dem
+    // Saga-State-Store (kein Schreibpfad, parametrisiertes SQL wie im SigningService).
+    .WithReference(workerDb, connectionName: "sagastate")
     .WithReference(rabbitmq)
     .WithEnvironment("PortalAuth__Authority",
         ReferenceExpression.Create($"{keycloak.GetEndpoint("http")}/realms/portal-dev"))
@@ -57,14 +60,23 @@ var webui = builder.AddProject<Projects.OfficeSelfSigningPortal_WebUI>("webui")
 
 var workerService = builder.AddProject<Projects.OfficeSelfSigningPortal_WorkerService>("workerservice")
     .WithReference(workerDb)
+    // Lesender Artefakt-Zugriff für den Scan (Ticket 05): Der WorkerService liest die
+    // Blobs der Ingestion aus der Portal-DB (read-only, parametrisiert — kein EF-Pfad).
+    .WithReference(portalDb)
     .WithReference(rabbitmq)
     .WaitFor(postgres)
     .WaitFor(rabbitmq);
 
 var signingService = builder.AddProject<Projects.OfficeSelfSigningPortal_SigningService>("signingservice")
+    // Dev-Profil: LocalDevKeyProvider ist ausschließlich hier zulässig (AK-54, TC-35).
+    .WithEnvironment("Deployment__Profile", "dev")
     .WithReference(signingDb)
     // TM-19: Der Guard verifiziert den Saga-Status read-only gegen den Saga-State-Store.
     .WithReference(workerDb, connectionName: "sagastate")
-    .WaitFor(postgres);
+    // Ticket 06: Guard-Ablehnungen (AK-39) schreiben in den konsolidierten Audit-Trail.
+    .WithReference(portalDb)
+    .WithReference(rabbitmq)
+    .WaitFor(postgres)
+    .WaitFor(rabbitmq);
 
 builder.Build().Run();

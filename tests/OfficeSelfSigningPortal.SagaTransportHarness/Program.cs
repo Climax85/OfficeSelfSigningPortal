@@ -10,6 +10,7 @@ using OfficeSelfSigningPortal.SigningService.Messaging;
 using OfficeSelfSigningPortal.WorkerService.Data;
 using OfficeSelfSigningPortal.WorkerService.Messaging;
 using OfficeSelfSigningPortal.WorkerService.Saga;
+using Ossp.Audit;
 using Ossp.Contracts;
 
 // Transport-Harness des Seams S2 (AK-40, TC-39, TM-19/AK-39/TC-30).
@@ -17,12 +18,13 @@ using Ossp.Contracts;
 // Container und rufen diesen Harness mit den Connection Strings auf; der Exitcode
 // und die MARKER-Zeilen auf stdout sind das Prüfergebnis.
 //
-// Aufruf: harness <postgres-connstr> <rabbitmq-connstr> <worker|signing> <signing-connstr>
+// Aufruf: harness <postgres-connstr> <rabbitmq-connstr> <worker|signing> <portal-connstr> [signing-connstr]
 
 var pg = args[0];
 var rabbit = args[1];
 var modus = args[2];
-var signingPg = args.Length > 3 ? args[3] : pg;
+var portalPg = args[3];
+var signingPg = args.Length > 4 ? args[4] : pg;
 
 var retry = new OsspRetryOptions { Limit = 3, MinDelay = TimeSpan.FromMilliseconds(50), MaxDelay = TimeSpan.FromMilliseconds(200) };
 var jobFailed = new ConcurrentBag<JobFailed>();
@@ -43,8 +45,10 @@ async Task<IHost> StartWorkerHostAsync(string rolle)
     builder.Logging.AddConsole();
     builder.Logging.SetMinimumLevel(LogLevel.Warning);
     builder.Services.AddDbContext<WorkerDbContext>(options => options.UseNpgsql(pg));
-    builder.Services.AddDbContextFactory<WorkerDbContext>(options => options.UseNpgsql(pg));
-    builder.Services.AddSingleton<ISagaAuditWriter, EfSagaAuditWriter>();
+    // Konsolidierter Audit-Trail (Ticket 06): Übergänge schreiben append-only in
+    // die portal-DB (SHA-256-Hash-Kette); der WorkerService ist nur ein Writer.
+    builder.Services.AddAuditTrail(portalPg);
+    builder.Services.AddSingleton<ISagaAuditWriter, SagaAuditTrailWriter>();
     builder.Services.AddMassTransit(x =>
     {
         x.AddAnalysisSaga(useEntityFrameworkRepository: true);
@@ -74,8 +78,8 @@ async Task<IHost> StartSigningHostAsync()
     builder.Logging.ClearProviders();
     builder.Logging.AddConsole();
     builder.Logging.SetMinimumLevel(LogLevel.Warning);
-    builder.Services.AddDbContextFactory<SigningDbContext>(options => options.UseNpgsql(signingPg));
-    builder.Services.AddSingleton<ISigningIncidentWriter, EfSigningIncidentWriter>();
+    // Guard-Ablehnungen (AK-39) auditiert der Guard in denselben Trail (Ticket 06).
+    builder.Services.AddAuditTrail(portalPg);
     builder.Services.AddSingleton<ISagaStateReader>(_ => new PostgresSagaStateReader(pg));
     builder.Services.AddMassTransit(x =>
     {
@@ -206,23 +210,14 @@ async Task<string> DumpPostgresDiagnosticsAsync()
     return $"POSTGRES-DIAGNOSTIK:{Environment.NewLine}{sb}";
 }
 
-async Task<int> CountSagaAuditEntriesAsync(Guid id)
+async Task<int> CountAuditTrailEntriesAsync(Guid id, string category)
 {
-    await using var connection = new NpgsqlConnection(pg);
+    await using var connection = new NpgsqlConnection(portalPg);
     await connection.OpenAsync();
     await using var command = new NpgsqlCommand(
-        "SELECT COUNT(*) FROM saga_audit_entries WHERE \"JobId\" = @id", connection);
+        "SELECT COUNT(*) FROM audit_trail WHERE \"JobId\" = @id AND \"Category\" = @category", connection);
     command.Parameters.AddWithValue("id", id);
-    return Convert.ToInt32(await command.ExecuteScalarAsync());
-}
-
-async Task<int> CountSigningIncidentsAsync(Guid id)
-{
-    await using var connection = new NpgsqlConnection(signingPg);
-    await connection.OpenAsync();
-    await using var command = new NpgsqlCommand(
-        "SELECT COUNT(*) FROM signing_incidents WHERE \"JobId\" = @id", connection);
-    command.Parameters.AddWithValue("id", id);
+    command.Parameters.AddWithValue("category", category);
     return Convert.ToInt32(await command.ExecuteScalarAsync());
 }
 
@@ -244,6 +239,7 @@ try
     if (modus == "worker")
     {
         await MigrateAsync<WorkerDbContext>(pg);
+        await MigrateAsync<AuditDbContext>(portalPg);
         var jobId = Guid.NewGuid();
         using var workerA = await StartWorkerHostAsync("worker-A");
         using var publisher = await StartPublisherAsync();
@@ -262,7 +258,7 @@ try
         await bus.Publish(new SignMacroCompleted(jobId, Guid.NewGuid(), DateTimeOffset.UtcNow));
         await WaitForSagaStateAsync(jobId, SagaStateNames.Signiert);
 
-        var auditCount = await CountSagaAuditEntriesAsync(jobId);
+        var auditCount = await CountAuditTrailEntriesAsync(jobId, AuditCategories.Saga);
         Console.WriteLine($"MARKER AUDIT-COUNT {auditCount}");
         if (auditCount < 4)
         {
@@ -273,6 +269,7 @@ try
     {
         await MigrateAsync<WorkerDbContext>(pg);
         await MigrateAsync<SigningDbContext>(signingPg);
+        await MigrateAsync<AuditDbContext>(portalPg);
         var jobId = Guid.NewGuid();
         using var worker = await StartWorkerHostAsync("worker");
         using var publisher = await StartPublisherAsync();
@@ -304,7 +301,7 @@ try
             throw new InvalidOperationException("Vorgang hat den Status nach Guard-Ablehnung geändert.");
         }
 
-        var incidents = await CountSigningIncidentsAsync(jobId);
+        var incidents = await CountAuditTrailEntriesAsync(jobId, AuditCategories.Guard);
         Console.WriteLine($"MARKER INCIDENTS {incidents}");
         if (incidents != 1)
         {

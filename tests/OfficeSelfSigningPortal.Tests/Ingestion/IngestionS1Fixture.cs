@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OfficeSelfSigningPortal.Tests.Support;
 using OfficeSelfSigningPortal.WebUI.Data;
+using Ossp.Audit;
 using Xunit;
 
 namespace OfficeSelfSigningPortal.Tests.Ingestion;
@@ -20,11 +21,22 @@ public sealed class IngestionS1Fixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await _postgres.StartAsync();
-        Factory = new PortalWebDbFactory(_postgres.GetConnectionString());
+        // Der Status-Endpunkt liest den Saga-State-Store (T09) — im Seam S1 zeigt
+        // 'sagastate' auf denselben Container (vgl. ReviewS1Fixture).
+        Factory = new PortalWebDbFactory(_postgres.GetConnectionString(), _postgres.GetConnectionString());
 
         await using var scope = Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<PortalDbContext>();
         await db.Database.MigrateAsync();
+
+        // Upload schreibt seit Ticket 06 Audit-Einträge (REQ-18) — Audit-Schema mitspielen.
+        var auditDb = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
+        await auditDb.Database.MigrateAsync();
+
+        await using var connection = new Npgsql.NpgsqlConnection(_postgres.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = new Npgsql.NpgsqlCommand(SagaStoreTestSchema.SagaTableDdl, connection);
+        await command.ExecuteNonQueryAsync();
     }
 
     public async Task DisposeAsync()

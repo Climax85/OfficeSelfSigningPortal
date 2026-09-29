@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OfficeSelfSigningPortal.ServiceDefaults\OfficeSelfSigningPortal.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Ossp.Contracts\Ossp.Contracts.csproj" />
+    <ProjectReference Include="..\Ossp.Audit\Ossp.Audit.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,6 +18,9 @@
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.5.7" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="OpenMcdf" Version="2.4.1" />
+    <PackageReference Include="Polly.Core" Version="8.6.4" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>

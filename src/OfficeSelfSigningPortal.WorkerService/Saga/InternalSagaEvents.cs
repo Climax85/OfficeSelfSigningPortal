@@ -17,12 +17,6 @@ public sealed record ValidierungAbgeschlossen(Guid JobId);
 /// <summary>InValidierung → NichtSignierbar ("Datei makrofrei", Anhang B).</summary>
 public sealed record MakrofreieDateiErkannt(Guid JobId);
 
-/// <summary>
-/// RueckfrageAusstehend → ReviewAusstehend ("Einreicher-Antwort eingegangen", Anhang B).
-/// Verdrahtung mit der WebUI (Review-API) erfolgt in Ticket 07.
-/// </summary>
-public sealed record EinreicherAntwortEingegangen(
-    Guid JobId,
-    string Antwort,
-    string SubmittedBy,
-    DateTimeOffset BeantwortetAm);
+// Hinweis: Das dritte interne Ereignis (EinreicherAntwortEingegangen) quert seit
+// Ticket 07 die Service-Grenze WebUI → Saga und wurde deshalb als Vertragsnachricht
+// nach Ossp.Contracts verschoben (begründete Anhang-A-Abweichung, siehe dort).

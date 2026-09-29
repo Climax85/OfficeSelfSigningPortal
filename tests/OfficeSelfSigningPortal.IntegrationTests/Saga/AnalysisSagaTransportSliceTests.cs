@@ -28,6 +28,7 @@ public sealed class AnalysisSagaTransportSliceTests : IAsyncLifetime
     private RabbitMqContainer _rabbitMq = null!;
     private string _workerConnectionString = "";
     private string _signingConnectionString = "";
+    private string _portalConnectionString = "";
     private string _rabbitMqConnectionString = "";
     private string _harnessPath = "";
 
@@ -38,14 +39,19 @@ public sealed class AnalysisSagaTransportSliceTests : IAsyncLifetime
         _rabbitMq = TestContainers.CreateRabbitMq();
         await Task.WhenAll(_postgres.StartAsync(), _rabbitMq.StartAsync());
 
-        // Zwei Datenbanken auf einem Server, damit beide DbContexts sauber migrieren
-        // (je eigener __EFMigrationsHistory).
+        // Drei Datenbanken auf einem Server, damit alle DbContexts sauber migrieren
+        // (je eigener __EFMigrationsHistory; Audit-Trail lebt seit Ticket 06 in der portal-DB).
         await _postgres.ExecScriptAsync("CREATE DATABASE signing;");
+        await _postgres.ExecScriptAsync("CREATE DATABASE portal;");
 
         _workerConnectionString = _postgres.GetConnectionString();
         _signingConnectionString = new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())
         {
             Database = "signing",
+        }.ConnectionString;
+        _portalConnectionString = new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())
+        {
+            Database = "portal",
         }.ConnectionString;
         _rabbitMqConnectionString =
             $"amqp://ossp:ossp-test@{_rabbitMq.Hostname}:{_rabbitMq.GetMappedPublicPort(5672)}";
@@ -92,7 +98,7 @@ public sealed class AnalysisSagaTransportSliceTests : IAsyncLifetime
 
     private async Task<string> RunHarnessAsync(string modus, string? signingConnectionString = null)
     {
-        var arguments = $"\"{_harnessPath}\" \"{_workerConnectionString}\" \"{_rabbitMqConnectionString}\" {modus}";
+        var arguments = $"\"{_harnessPath}\" \"{_workerConnectionString}\" \"{_rabbitMqConnectionString}\" {modus} \"{_portalConnectionString}\"";
         if (signingConnectionString is not null)
         {
             arguments += $" \"{signingConnectionString}\"";

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using MassTransit;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -7,9 +8,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using OfficeSelfSigningPortal.WebUI.Authentication;
 using OfficeSelfSigningPortal.WebUI.Authentication.Testing;
+using OfficeSelfSigningPortal.WebUI.Audit;
 using OfficeSelfSigningPortal.WebUI.Components;
 using OfficeSelfSigningPortal.WebUI.Data;
+using OfficeSelfSigningPortal.WebUI.Download;
 using OfficeSelfSigningPortal.WebUI.Ingestion;
+using OfficeSelfSigningPortal.WebUI.LiveStatus;
+using OfficeSelfSigningPortal.WebUI.Notifications;
+using OfficeSelfSigningPortal.WebUI.Review;
+using Ossp.Audit;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,8 +28,58 @@ builder.Services.AddRazorComponents()
 builder.Services.AddDbContext<PortalDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("portal")));
 
+// Audit-Trail (REQ-18): append-only, SHA-256-Hash-Kette in der portal-DB (Ticket 06).
+// Upload-Ereignisse schreibt die Ingestion, Saga-Übergänge der WorkerService und
+// Guard-Ablehnungen der SigningService in dieselbe Kette.
+builder.Services.AddAuditTrail(builder.Configuration.GetConnectionString("portal")
+    ?? throw new InvalidOperationException(
+        "Connection String 'portal' fehlt — bitte Aspire-AppHost oder Konfiguration prüfen."));
+
 builder.Services.AddOptions<IngestionOptions>().BindConfiguration(IngestionOptions.SectionName);
+builder.Services.AddOptions<ReviewOptions>().BindConfiguration(ReviewOptions.SectionName);
+builder.Services.AddOptions<LiveStatusOptions>().BindConfiguration(LiveStatusOptions.SectionName);
+builder.Services.AddOptions<DownloadOptions>().BindConfiguration(DownloadOptions.SectionName);
+builder.Services.AddOptions<NotificationOptions>().BindConfiguration(NotificationOptions.SectionName);
 builder.Services.AddScoped<SubmissionService>();
+builder.Services.AddScoped<ReviewService>();
+builder.Services.AddScoped<DownloadService>();
+builder.Services.AddScoped<NotificationService>();
+
+// Live-Status-Kanal (IF-03, AK-02/AK-20): SignalR-Hub + Single-Replica-Wächter,
+// der den Saga-State-Store pollt und Änderungen pushed (REQ-20 — ohne Backplane).
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<StatusWatchTracker>();
+builder.Services.AddHostedService<StatusChangeNotifier>();
+
+// Rate-Limit des Rückfrage-Kanals (TM-02): Fixed-Window pro Nutzer, Partition
+// nach IdP-Identität — die Policy löst pro Request aus der Konfiguration auf.
+builder.Services.AddRateLimiter(rateLimiterOptions =>
+{
+    // Verbindliche Ablehnung im Rückfrage-Kanal: 429 (TM-02) statt des
+    // Framework-Defaults 503 (RejectionStatusCode).
+    rateLimiterOptions.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    rateLimiterOptions.AddPolicy(ReviewEndpoints.RueckfrageRateLimitPolicy, context =>
+    {
+        var reviewOptions = context.RequestServices
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<ReviewOptions>>().Value;
+        var userId = context.User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier) ?? "anonymous";
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            userId,
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = reviewOptions.RueckfrageRateLimitPermitLimit,
+                Window = TimeSpan.FromSeconds(reviewOptions.RueckfrageRateLimitWindowSeconds),
+                QueueLimit = 0,
+            });
+    });
+});
+
+// Review-API (Ticket 07): read-only Zugriff auf den Saga-State-Store (analysis_saga,
+// worker-DB — siehe PostgresSagaReviewReader). Schreibzugriff hat ausschließlich die
+// Saga selbst; Entscheidungen erreichen sie als Outbox-Nachrichten.
+var sagaStateConnectionString = builder.Configuration.GetConnectionString("sagastate");
+builder.Services.AddSingleton<ISagaReviewReader>(
+    new PostgresSagaReviewReader(sagaStateConnectionString));
 
 // ScanRequested-Publikation über die EF-Core-Outbox (REQ-11, TM-06): Staging vor
 // SaveChanges — die Nachricht committet atomar mit dem Upload. Test-Suites setzen
@@ -127,10 +184,16 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.UseAntiforgery();
 
 app.MapDefaultEndpoints();
 app.MapSubmissionEndpoints();
+app.MapReviewEndpoints();
+app.MapAuditEndpoints();
+app.MapDownloadEndpoints();
+app.MapNotificationEndpoints();
+app.MapHub<JobStatusHub>(JobStatusHub.Route);
 
 if (useTestAuthHandler)
 {

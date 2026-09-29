@@ -221,6 +221,9 @@ namespace OfficeSelfSigningPortal.WorkerService.Migrations
                     b.Property<DateTimeOffset>("ReceivedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("SignedArtifactId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("SubmittedBy")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -231,45 +234,6 @@ namespace OfficeSelfSigningPortal.WorkerService.Migrations
                     b.HasIndex("ReceivedAt");
 
                     b.ToTable("analysis_saga", (string)null);
-                });
-
-            modelBuilder.Entity("OfficeSelfSigningPortal.WorkerService.Saga.SagaAuditEntry", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Aktor")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("Detail")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Ereignis")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<Guid>("JobId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Zustand")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("JobId");
-
-                    b.ToTable("saga_audit_entries", (string)null);
                 });
 
             modelBuilder.Entity("MassTransit.EntityFrameworkCoreIntegration.OutboxMessage", b =>

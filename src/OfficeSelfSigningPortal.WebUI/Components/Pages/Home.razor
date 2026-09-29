@@ -5,3 +5,11 @@
 <h1>Office-Self-Signing-Portal</h1>
 
 <p>Self-Service für die Codesignatur von Office-Makrodateien (.xlsm/.docm/.pptm).</p>
+
+<ul>
+    <li><a href="/upload">Datei einreichen</a> — Upload mit Vorgangs-ID und Live-Status.</li>
+    <AuthorizeView Roles="Bearbeiter">
+        <li><a href="/dashboard">Bearbeiter-Dashboard</a> — offene Reviews mit Alterungsanzeige.</li>
+    </AuthorizeView>
+    <li><a href="/benachrichtigungen">Benachrichtigungen</a> — Endzustände und Rückfragen der eigenen Vorgänge.</li>
+</ul>
