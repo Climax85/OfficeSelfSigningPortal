@@ -68,6 +68,8 @@ var workerService = builder.AddProject<Projects.OfficeSelfSigningPortal_WorkerSe
     .WaitFor(rabbitmq);
 
 var signingService = builder.AddProject<Projects.OfficeSelfSigningPortal_SigningService>("signingservice")
+    // Dev-Profil: LocalDevKeyProvider ist ausschließlich hier zulässig (AK-54, TC-35).
+    .WithEnvironment("Deployment__Profile", "dev")
     .WithReference(signingDb)
     // TM-19: Der Guard verifiziert den Saga-Status read-only gegen den Saga-State-Store.
     .WithReference(workerDb, connectionName: "sagastate")

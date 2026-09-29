@@ -255,8 +255,12 @@ public sealed class AnalysisSaga : MassTransitStateMachine<AnalysisSagaState>
         During(SignierungAngefragt,
             When(SignaturErfolgreich)
                 .ThenAsync(async ctx =>
-                    // Benachrichtigung des Einreichers verdrahtet Ticket 10 (E-Mail-Pfad).
-                    await AuditAsync(ctx, SagaStateNames.Signiert, "Signierung abgeschlossen", "system:signing-service", null))
+                {
+                    // Signatur-Referenz persistieren (Download TC-27/AK-04 via T09,
+                    // Retention T11) und Benachrichtigung des Einreichers verdrahtet Ticket 10.
+                    ctx.Saga.SignedArtifactId = ctx.Message.SignedArtifactId;
+                    await AuditAsync(ctx, SagaStateNames.Signiert, "Signierung abgeschlossen", "system:signing-service", null);
+                })
                 .TransitionTo(Signiert),
             When(SignaturFehlgeschlagen, ctx => !ctx.Message.Retryable)
                 .ThenAsync(async ctx =>

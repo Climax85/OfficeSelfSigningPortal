@@ -35,11 +35,14 @@ public sealed class AuditEntry
     public string EntryHash { get; set; } = string.Empty;
 }
 
-/// <summary>Verbindliche Ereignisarten der Konsolidierung (Uploads, Saga-Übergänge, Guard-Ablehnungen, Reviews).</summary>
+/// <summary>Verbindliche Ereignisarten der Konsolidierung (Uploads, Saga-Übergänge, Guard-Ablehnungen, Reviews, Signierung).</summary>
 public static class AuditCategories
 {
     public const string Upload = "upload";
     public const string Saga = "saga";
     public const string Guard = "guard";
     public const string Review = "review";
+
+    /// <summary>Signier-Evidenz (Ticket 08, REQ-18/TM-08) — ausschließlich Metadaten, kein Inhalt.</summary>
+    public const string Signing = "signing";
 }

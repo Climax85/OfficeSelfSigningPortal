@@ -1,0 +1,292 @@
+using System.Text;
+using OpenMcdf;
+
+namespace OfficeSelfSigningPortal.TestSupport;
+
+/// <summary>
+/// Vollständiges, spec-valides VBA-Projekt für Signier-Tests (Anhang C, MS-OVBA 2.3/2.4.2.5):
+/// PROJECT-Stream mit Header-Properties, Sektionen und Designer-Verweis, dir-Stream mit
+/// Projekt-/Referenz-/Modul-Records (inkl. REFERENCECONTROL mit Extended-Block) sowie
+/// Modul-Streams (RLE, Quelltext ab Offset 0). Der Aufbau ist fix, damit Hash-Golden-Values
+/// deterministisch sind.
+/// </summary>
+public static class SignCorpus
+{
+    static SignCorpus()
+    {
+        // MBCS-Codepage 1252 für Fixture-Erzeugung (siehe VbaContentHasher).
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
+    public const int CodePage = 1252;
+    public const uint Lcid = 0x0409;
+
+    public const string ProjectName = "OsspSignTest";
+
+    /// <summary>Standard-Modul mit VB_Name-Attribut und zwei Prozeduren (CRLF-Zeilenumbrüche).</summary>
+    public const string StandardModuleSource =
+        "Attribute VB_Name = \"CleanModule\"\r\n" +
+        "Option Explicit\r\n" +
+        "Sub Hello()\r\n" +
+        "    MsgBox \"Hello\"\r\n" +
+        "End Sub\r\n";
+
+    /// <summary>Dokumentenmodul mit Default-Attributen (müssen vom Hash ausgeschlossen werden).</summary>
+    public const string DocumentModuleSource =
+        "Attribute VB_Name = \"ThisWorkbook\"\r\n" +
+        "Attribute VB_Base = \"0{00020820-0000-0000-C000-000000000046}\"\r\n" +
+        "Attribute VB_GlobalNameSpace = False\r\n" +
+        "Attribute VB_Creatable = False\r\n" +
+        "Attribute VB_PredeclaredId = True\r\n" +
+        "Attribute VB_Exposed = True\r\n" +
+        "Attribute VB_TemplateDerived = False\r\n" +
+        "Attribute VB_Customizable = True\r\n" +
+        "Private Sub Workbook_Open()\r\n" +
+        "End Sub\r\n";
+
+    /// <summary>
+    /// Baut das CFB-vbaProject.bin: Root mit PROJECT-Stream und VBA-Speicher (dir + Modul-Streams),
+    /// optional Designer-Storages (frm*) für BaseClass-Properties.
+    /// </summary>
+    public static byte[] BuildVbaProject()
+    {
+        using var compound = new CompoundFile();
+
+        var vba = compound.RootStorage.AddStorage("VBA");
+        var dir = vba.AddStream("dir");
+        dir.SetData(VbaRleCompressor.CompressStoreOnly(BuildDirStream()));
+
+        AddModule(vba, "CleanModule", StandardModuleSource, procedural: true);
+        AddModule(vba, "ThisWorkbook", DocumentModuleSource, procedural: false);
+
+        var project = compound.RootStorage.AddStream("PROJECT");
+        project.SetData(Encoding.GetEncoding(CodePage).GetBytes(BuildProjectText()));
+
+        var designer = compound.RootStorage.AddStorage("frmTest");
+        designer.AddStream("o").SetData(new byte[] { 0x10, 0x20, 0x30 });
+        designer.AddStream("f").SetData(Encoding.ASCII.GetBytes("Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} frmTest\r\nEnd\r\n"));
+
+        using var output = new MemoryStream();
+        compound.Save(output);
+        return output.ToArray();
+    }
+
+    /// <summary>Baut eine OOXML-Makro-Datei um das angegebene vbaProject.bin (xl/word/ppt-Layout).</summary>
+    public static byte[] CreateOoxmlMacroFile(byte[] vbaProject, string partFolder = "xl")
+    {
+        using var package = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(package, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            AddEntry(zip, "[Content_Types].xml", """
+                <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+                <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+                  <Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/>
+                </Types>
+                """);
+            AddEntry(zip, $"{partFolder}/vbaProject.bin", vbaProject);
+        }
+
+        return package.ToArray();
+    }
+
+    private static void AddModule(CFStorage vba, string streamName, string source, bool procedural)
+    {
+        var module = vba.AddStream(streamName);
+        module.SetData(VbaRleCompressor.CompressStoreOnly(Encoding.GetEncoding(CodePage).GetBytes(source)));
+    }
+
+    private static string BuildProjectText()
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("ID=\"{11111111-2222-3333-4444-555555555555}\"");
+        builder.AppendLine("Document=ThisWorkbook/&H00000000");
+        builder.AppendLine("Module=CleanModule");
+        builder.AppendLine("BaseClass=frmTest");
+        builder.AppendLine("Package={AC9F2F90-E877-11CE-9F68-00AA00574A4F}");
+        builder.AppendLine("HelpFile=\"\"");
+        builder.AppendLine($"Name=\"{ProjectName}\"");
+        builder.AppendLine("HelpContextID=\"0\"");
+        builder.AppendLine("Description=\"OSSP signing fixture\"");
+        builder.AppendLine("VersionCompatible32=\"393222000\"");
+        builder.AppendLine("CMG=\"0604AA00EA009E049E049A089A08\"");
+        builder.AppendLine("DPB=\"B6B41AD07A30374D374DC8B3384DDC63D35C51C89D809616E325E4129493EEFDBC48EE77D47B79\"");
+        builder.AppendLine("GC=\"6664CAA0CAE07BE17BE17B\"");
+        builder.AppendLine("[Host Extender Info]");
+        builder.AppendLine("&H00000001={3832D640-CF90-11CF-8E43-00A0C911005A};VBE;&H00000000");
+        builder.AppendLine("[Workspace]");
+        builder.AppendLine("CleanModule=0, 0, 0, 0, C");
+        return builder.ToString();
+    }
+
+    private static byte[] BuildDirStream()
+    {
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+
+        WriteSizedRecord(writer, 0x0001, u32(0x00000001));                 // PROJECTSYSKIND (Win32)
+        WriteSizedRecord(writer, 0x0002, u32(Lcid));                       // PROJECTLCID
+        WriteSizedRecord(writer, 0x0014, u32(Lcid));                       // PROJECTLCIDINVOKE
+        WriteSizedRecord(writer, 0x0003, u16(1252));                       // PROJECTCODEPAGE
+        WriteSizedRecord(writer, 0x0004, mbcs(ProjectName));               // PROJECTNAME
+        WriteSizedRecord(writer, 0x0005, mbcs(""));                        // PROJECTDOCSTRING
+        WriteSizedRecord(writer, 0x0040, utf16(""));                       // PROJECTDOCSTRINGUNICODE
+        WriteSizedRecord(writer, 0x0006, mbcs(""));                        // PROJECTHELPFILEPATH (1)
+        WriteSizedRecord(writer, 0x003D, mbcs(""));                        // PROJECTHELPFILEPATH (2)
+        WriteSizedRecord(writer, 0x0007, u32(0));                          // PROJECTHELPCONTEXT
+        WriteSizedRecord(writer, 0x0008, u32(0));                          // PROJECTLIBFLAGS
+        writer.Write((ushort)0x0009);                                      // PROJECTVERSION (kein Size-Feld)
+        writer.Write((uint)0x00000004);                                    // Reserved
+        writer.Write((uint)0x00000001);                                    // VersionMajor
+        writer.Write((ushort)0x0000);                                      // VersionMinor
+        WriteSizedRecord(writer, 0x000C, mbcs(""));                        // PROJECTCONSTANTS
+        WriteSizedRecord(writer, 0x003C, utf16(""));                       // PROJECTCONSTANTSUNICODE
+
+        WriteReferenceRegistered(writer, "stdole", "*\\G{00020430-0000-0000-C000-000000000046}#2.0#0#C:\\Windows\\System32\\stdole2.tlb#OLE Automation");
+        WriteReferenceControl(writer, "ControlLib", "*\\G{01234567-89AB-CDEF-0123-456789ABCDEF}#1.0#0#C:\\Windows\\System32\\controllib.ocx#Control Lib",
+            libidExtended: "*\\G{01234567-89AB-CDEF-0123-456789ABCDEF}#1.0#0#C:\\Windows\\System32\\controllib.exd#Control Lib");
+        WriteReferenceOriginalWithControl(writer, "OrigControl", "*\\O{01234567-89AB-CDEF-0123-456789ABCDEF}#1.0#0#C:\\Windows\\System32\\orig.ocx#Orig", "*\\G{01234567-89AB-CDEF-0123-456789ABCDEF}#1.0#0#C:\\Windows\\System32\\orig.ocx#Orig");
+
+        writer.Write((ushort)0x000F);                                      // PROJECTMODULES
+        writer.Write((uint)0x00000002);                                    // Size (ModuleCount folgt)
+        writer.Write((ushort)0x0002);                                      // ModuleCount
+        WriteSizedRecord(writer, 0x0013, u16(0xFFFF));                     // PROJECTCOOKIE
+
+        WriteModuleRecords(writer, "CleanModule", procedural: true, readOnly: false, privateModule: false);
+        WriteModuleRecords(writer, "ThisWorkbook", procedural: false, readOnly: false, privateModule: true);
+
+        writer.Write((ushort)0x0010);                                      // PROJECTTERMINATOR
+        writer.Write((uint)0x00000000);                                    // Reserved
+
+        writer.Flush();
+        return stream.ToArray();
+
+        static byte[] mbcs(string value) => Encoding.GetEncoding(CodePage).GetBytes(value);
+        static byte[] utf16(string value) => Encoding.Unicode.GetBytes(value);
+        static byte[] u16(ushort value) => [(byte)(value & 0xFF), (byte)(value >> 8)];
+        static byte[] u32(uint value) => [(byte)(value & 0xFF), (byte)((value >> 8) & 0xFF), (byte)((value >> 16) & 0xFF), (byte)(value >> 24)];
+    }
+
+    private static void WriteSizedRecord(BinaryWriter writer, ushort id, byte[] payload)
+    {
+        writer.Write(id);
+        writer.Write((uint)payload.Length);
+        writer.Write(payload);
+    }
+
+    private static void WriteRecord(BinaryWriter writer, ushort id, byte[] payload)
+    {
+        writer.Write(id);
+        writer.Write(payload);
+    }
+
+    private static void WriteNameRecord(BinaryWriter writer, string name)
+    {
+        WriteSizedRecord(writer, 0x0016, Encoding.GetEncoding(CodePage).GetBytes(name));
+        writer.Write((ushort)0x003E); // Reserved: Id des folgenden Unicode-Records
+        var unicode = Encoding.Unicode.GetBytes(name);
+        writer.Write((uint)unicode.Length);
+        writer.Write(unicode);
+    }
+
+    private static void WriteReferenceRegistered(BinaryWriter writer, string name, string libid)
+    {
+        WriteNameRecord(writer, name);
+        var libidBytes = Encoding.GetEncoding(CodePage).GetBytes(libid);
+        writer.Write((ushort)0x000D);                                      // REFERENCEREGISTERED
+        writer.Write((uint)libidBytes.Length);
+        writer.Write(libidBytes);
+        writer.Write((uint)0x00000000);                                    // Reserved1
+        writer.Write((ushort)0x0000);                                      // Reserved2
+    }
+
+    private static void WriteReferenceControl(BinaryWriter writer, string name, string libidTwiddled, string? libidExtended = null)
+    {
+        WriteNameRecord(writer, name);
+        writer.Write((ushort)0x002F);                                      // REFERENCECONTROL
+        var twiddled = Encoding.GetEncoding(CodePage).GetBytes(libidTwiddled);
+        writer.Write((uint)twiddled.Length);
+        writer.Write(twiddled);
+        writer.Write((uint)0x00000000);                                    // Reserved1
+        writer.Write((ushort)0x0000);                                      // Reserved2
+
+        if (libidExtended is not null)
+        {
+            writer.Write((ushort)0x0030);                                  // Extended-Record (Reserved3)
+            var extended = Encoding.GetEncoding(CodePage).GetBytes(libidExtended);
+            writer.Write((uint)extended.Length);
+            writer.Write(extended);
+            writer.Write((uint)0x00000000);                                // Reserved4
+            writer.Write((ushort)0x0000);                                  // Reserved5
+            writer.Write(new byte[16]);                                    // OriginalTypeLib (GUID)
+            writer.Write((uint)0x00000000);                                // Cookie
+        }
+    }
+
+    private static void WriteReferenceOriginalWithControl(BinaryWriter writer, string name, string libidOriginal, string libidTwiddled)
+    {
+        WriteNameRecord(writer, name);
+        var original = Encoding.GetEncoding(CodePage).GetBytes(libidOriginal);
+        writer.Write((ushort)0x0033);                                      // REFERENCEORIGINAL
+        writer.Write((uint)original.Length);
+        writer.Write(original);
+        WriteReferenceControlBody(writer, libidTwiddled);
+    }
+
+    private static void WriteReferenceControlBody(BinaryWriter writer, string libidTwiddled)
+    {
+        var twiddled = Encoding.GetEncoding(CodePage).GetBytes(libidTwiddled);
+        writer.Write((ushort)0x002F);                                      // REFERENCECONTROL
+        writer.Write((uint)twiddled.Length);
+        writer.Write(twiddled);
+        writer.Write((uint)0x00000000);                                    // Reserved1
+        writer.Write((ushort)0x0000);                                      // Reserved2 (kein Extended-Block)
+    }
+
+    private static void WriteModuleRecords(
+        BinaryWriter writer, string name, bool procedural, bool readOnly, bool privateModule)
+    {
+        WriteSizedRecord(writer, 0x0019, Encoding.GetEncoding(CodePage).GetBytes(name)); // MODULENAME
+        var unicode = Encoding.Unicode.GetBytes(name);
+        writer.Write((ushort)0x0047);                                      // MODULENAMEUNICODE
+        writer.Write((uint)unicode.Length);
+        writer.Write(unicode);
+        var streamName = Encoding.GetEncoding(CodePage).GetBytes(name);
+        writer.Write((ushort)0x001A);                                      // MODULESTREAMNAME
+        writer.Write((uint)streamName.Length);
+        writer.Write(streamName);
+        writer.Write((uint)0x00000000);                                    // Reserved
+        WriteSizedRecord(writer, 0x001C, mbcsEmpty());                     // MODULEDOCSTRING
+        writer.Write((ushort)0x0048);                                      // MODULEDOCSTRINGUNICODE
+        writer.Write((uint)0x00000000);                                    // Size 0
+        WriteSizedRecord(writer, 0x001E, u32b(0));                         // MODULEHELPCONTEXT
+        WriteSizedRecord(writer, 0x002C, u16b(0xFFFF));                    // MODULECOOKIE
+        WriteSizedRecord(writer, 0x0031, u32b(0));                         // MODULEOFFSET
+        writer.Write((ushort)(procedural ? 0x0021 : 0x0022));              // MODULETYPE
+        writer.Write((uint)0x00000000);                                    // Reserved
+        if (readOnly)
+        {
+            writer.Write((ushort)0x0025);                                  // MODULEREADONLY
+            writer.Write((uint)0x00000000);                                // Reserved
+        }
+        if (privateModule)
+        {
+            writer.Write((ushort)0x0028);                                  // MODULEPRIVATE
+            writer.Write((uint)0x00000000);                                // Reserved
+        }
+        writer.Write((ushort)0x002B);                                      // MODULETERMINATOR
+
+        static byte[] mbcsEmpty() => [];
+        static byte[] u32b(uint value) => [(byte)(value & 0xFF), (byte)((value >> 8) & 0xFF), (byte)((value >> 16) & 0xFF), (byte)(value >> 24)];
+        static byte[] u16b(ushort value) => [(byte)(value & 0xFF), (byte)(value >> 8)];
+    }
+
+    private static void AddEntry(System.IO.Compression.ZipArchive zip, string name, string content) =>
+        AddEntry(zip, name, Encoding.UTF8.GetBytes(content));
+
+    private static void AddEntry(System.IO.Compression.ZipArchive zip, string name, byte[] content)
+    {
+        var entry = zip.CreateEntry(name);
+        using var stream = entry.Open();
+        stream.Write(content, 0, content.Length);
+    }
+}

@@ -33,5 +33,6 @@ public class WorkerDbContext(DbContextOptions<WorkerDbContext> options) : DbCont
         entity.Property(x => x.ContentType).HasMaxLength(16);
         entity.Property(x => x.ContentSha256).HasMaxLength(64);
         entity.HasIndex(x => x.ReceivedAt);
+        entity.Property(x => x.SignedArtifactId); // Nullable — gesetzt mit SignMacroCompleted (Ticket 08)
     }
 }
