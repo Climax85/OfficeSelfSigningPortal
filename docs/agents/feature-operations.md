@@ -11,7 +11,7 @@ Verbindlicher Vertrag für **Feature-Epic** und **Arbeitstickets** auf dem konfi
 - **Arbeitstickets** in Abhängigkeitsreihenfolge anlegen (Blocker zuerst), damit Blocking-Kanten echte Referenzen tragen.
 - **Claim** erfolgt vor jeder Arbeit und ist exklusiv (Assignee bzw. `Status: claimed`). Ein Ticket pro Session.
 - **Frontier** = offen, unblocked, unclaimed; Abhängigkeitsreihenfolge (lokal: niedrigste Nummer) entscheidet.
-- **Kommentare** fassen zusammen: was gebaut wurde, Testzahlen, Commit-Hashes, Review-Verdikt.
+- **Kommentare** fassen zusammen: was gebaut wurde, Testzahlen, Commit-Hashes, Review-Verdikt, PR-/MR-Referenz (GitHub/GitLab).
 
 ## Epic-Body (alle Tracker, deutsch, verdichtet)
 
@@ -50,7 +50,7 @@ Native Hierarchie über Sub-Issues; CLI-Grundlagen (`gh issue create/view/list/c
 - **Claim**: `gh issue edit <n> --add-assignee @me` — die erste Schreiboperation der Session. Der Assignee **ist** der Claim.
 - **Status**: `ready-for-agent` ist ein Label (`--add-label` / `--remove-label`); `claimed` = Assignee gesetzt; `resolved` = Issue geschlossen.
 - **Kommentar**: `gh issue comment <n> --body "..."`.
-- **Resolve**: Kommentar (gebaut, Testzahlen, Commit-Hashes, Review-Verdikt), dann `gh issue close <n>`.
+- **Resolve**: Kommentar (gebaut, Testzahlen, Commit-Hashes, Review-Verdikt, PR-Link), dann `gh issue close <n>`. Der PR selbst wird von `implement-ticket` erstellt, **gemergt** wird erst in secure-feature Umsetzung Sub-Step 4.
 
 ## GitLab
 
@@ -63,4 +63,4 @@ Auf Tiers mit nativen Epics echte Epics; CLI-Grundlagen (`glab issue create/view
 - **Claim**: `glab issue update <n> --assignee @me` — die erste Schreiboperation der Session. Der Assignee **ist** der Claim.
 - **Status**: `ready-for-agent` ist ein Label (`--label` / `--unlabel`); `claimed` = Assignee gesetzt; `resolved` = Issue geschlossen.
 - **Kommentar**: `glab issue note <n> --message "..."`.
-- **Resolve**: Note (gebaut, Testzahlen, Commit-Hashes, Review-Verdikt), dann `glab issue close <n>`.
+- **Resolve**: Note (gebaut, Testzahlen, Commit-Hashes, Review-Verdikt, MR-Link), dann `glab issue close <n>`. Der MR selbst wird von `implement-ticket` erstellt, **gemergt** wird erst in secure-feature Umsetzung Sub-Step 4.
