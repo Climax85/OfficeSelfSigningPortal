@@ -13,16 +13,22 @@ public sealed class PortalWebDbFactory : WebApplicationFactory<App>
 {
     private readonly string _connectionString;
     private readonly string? _sagaStateConnectionString;
+    private readonly IReadOnlyDictionary<string, string>? _extraSettings;
 
     /// <param name="connectionString">Connection String der portal-DB (Testcontainers).</param>
     /// <param name="sagaStateConnectionString">
     /// Read-only-Saga-State-Store (analysis_saga). null = Dummy (Endpunkte, die den
     /// Reader aufrufen, werden von diesen Fixtures nicht getestet).
     /// </param>
-    public PortalWebDbFactory(string connectionString, string? sagaStateConnectionString = null)
+    /// <param name="extraSettings">Zusätzliche Konfigurationswerte (z. B. LiveStatus-Pollintervall).</param>
+    public PortalWebDbFactory(
+        string connectionString,
+        string? sagaStateConnectionString = null,
+        IReadOnlyDictionary<string, string>? extraSettings = null)
     {
         _connectionString = connectionString;
         _sagaStateConnectionString = sagaStateConnectionString;
+        _extraSettings = extraSettings;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -35,6 +41,13 @@ public sealed class PortalWebDbFactory : WebApplicationFactory<App>
         builder.UseSetting(
             "ConnectionStrings:sagastate",
             _sagaStateConnectionString ?? "Host=unused.invalid;Database=saga-probe-only;Username=probe;Password=probe");
+        if (_extraSettings is not null)
+        {
+            foreach (var (key, value) in _extraSettings)
+            {
+                builder.UseSetting(key, value);
+            }
+        }
     }
 }
 

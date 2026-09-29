@@ -15,7 +15,7 @@ public sealed class PostgresSagaReviewReader(string? connectionString) : ISagaRe
     // vom EF-Pfad begründet (kein EF-Kontext über das fremde WorkerService-Schema).
     private const string OpenReviewsQuery = """
         SELECT "CorrelationId", "CurrentState", "SubmittedBy", "OriginalFileName",
-               "ContentType", "FileSizeBytes", "ReceivedAt"
+               "ContentType", "FileSizeBytes", "ReceivedAt", "SignedArtifactId"
         FROM "analysis_saga"
         WHERE "CurrentState" IN ('ReviewAusstehend', 'RueckfrageAusstehend')
         ORDER BY "ReceivedAt" ASC
@@ -23,7 +23,7 @@ public sealed class PostgresSagaReviewReader(string? connectionString) : ISagaRe
 
     private const string VorgangQuery = """
         SELECT "CorrelationId", "CurrentState", "SubmittedBy", "OriginalFileName",
-               "ContentType", "FileSizeBytes", "ReceivedAt"
+               "ContentType", "FileSizeBytes", "ReceivedAt", "SignedArtifactId"
         FROM "analysis_saga"
         WHERE "CorrelationId" = @jobId
         """;
@@ -74,5 +74,6 @@ public sealed class PostgresSagaReviewReader(string? connectionString) : ISagaRe
             reader.GetString(3),
             reader.GetString(4),
             reader.GetInt64(5),
-            reader.GetFieldValue<DateTimeOffset>(6));
+            reader.GetFieldValue<DateTimeOffset>(6),
+            reader.IsDBNull(7) ? null : reader.GetGuid(7));
 }

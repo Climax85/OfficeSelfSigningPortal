@@ -1,0 +1,222 @@
+@page "/dashboard"
+@attribute [Authorize]
+@implements IDisposable
+@inject ISagaReviewReader SagaReader
+@inject ReviewService Reviews
+@inject IAuthorizationService Authorization
+@inject ILogger<Dashboard> Logger
+@inject NavigationManager Navigation
+
+<PageTitle>Bearbeiter-Dashboard</PageTitle>
+
+<h1>Bearbeiter-Dashboard</h1>
+
+<AuthorizeView Roles="Bearbeiter">
+    <Authorized>
+        <p>Offene Reviews, sortiert nach Einreichzeit (älteste zuerst).</p>
+
+        @if (_reviews is null)
+        {
+            <p>Dashboard wird geladen …</p>
+        }
+        else if (_reviews.Count == 0)
+        {
+            <p>Keine offenen Reviews.</p>
+        }
+        else
+        {
+            <table class="dashboard">
+                <thead>
+                    <tr>
+                        <th>Eingereicht</th>
+                        <th>Alter</th>
+                        <th>Datei</th>
+                        <th>Einreicher</th>
+                        <th>Status</th>
+                        <th>Aktionen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var review in _reviews)
+                    {
+                        <tr>
+                            <td>@review.SubmittedAt.LocalDateTime.ToString("g")</td>
+                            <td>@FormatAge(review.SubmittedAt)</td>
+                            <td>@review.OriginalFileName</td>
+                            <td>@review.SubmittedBy</td>
+                            <td>@review.CurrentState</td>
+                            <td>
+                                @if (_activeJob == review.JobId)
+                                {
+                                    <div class="decision-form">
+                                        <textarea @bind="_comment" rows="2"
+                                                  maxlength="@MaxCommentLength"
+                                                  placeholder="@(_decision == Ablehnen ? "Begründung (Pflicht) …" : "Kommentar (optional) …")"></textarea>
+                                        <div class="form-row">
+                                            <button class="primary" @onclick="() => SubmitDecisionAsync(review.JobId)"
+                                                    disabled="@(_submitting || (_decision == Ablehnen && string.IsNullOrWhiteSpace(_comment)))">
+                                                @(_decision == Freigeben ? "Freigeben" : _decision == Ablehnen ? "Ablehnen" : "Rückfrage senden")
+                                            </button>
+                                            <button @onclick="CancelDecision">Abbrechen</button>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="form-row">
+                                        <a class="button" href="@($"/vorgang/{review.JobId}")">Ansehen</a>
+                                        <button @onclick="() => BeginDecision(review.JobId, Freigeben)">Freigeben</button>
+                                        <button @onclick="() => BeginDecision(review.JobId, Ablehnen)">Ablehnen</button>
+                                        <button @onclick="() => BeginDecision(review.JobId, Rueckfrage)">Rückfrage</button>
+                                    </div>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (_feedback is not null)
+        {
+            <p class="info">@_feedback</p>
+        }
+    </Authorized>
+    <NotAuthorized>
+        <p class="error">Das Dashboard erfordert die Rolle „Bearbeiter“.</p>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private const string Freigeben = Ossp.Contracts.ReviewDecisionValues.Freigeben;
+    private const string Ablehnen = Ossp.Contracts.ReviewDecisionValues.Ablehnen;
+    private const string Rueckfrage = Ossp.Contracts.ReviewDecisionValues.Rueckfrage;
+    private const int MaxCommentLength = 2000;
+
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
+
+    private HubConnection? _hub;
+    private IReadOnlyList<OpenReviewItem>? _reviews;
+    private Guid? _activeJob;
+    private string? _decision;
+    private string? _comment;
+    private string? _feedback;
+    private bool _submitting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Serverseitige Policy-Prüfung (AK-09/TM-17) vor jeder Arbeit.
+        var authz = await Authorization.AuthorizeAsync(
+            (await AuthenticationState).User, policyName: PortalAuthPolicies.Editor);
+        if (!authz.Succeeded)
+        {
+            return;
+        }
+
+        await ReloadAsync();
+
+        _hub = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri(JobStatusHub.Route))
+            .WithAutomaticReconnect()
+            .Build();
+        _hub.On<OpenReviewsChangedEvent>(
+            JobStatusHub.OpenReviewsChangedMethod,
+            changed =>
+            {
+                // Live-Aktualisierung ohne Reload (AK-06): die Push-Liste ersetzt
+                // den lokalen Stand — alle Betrachter sehen denselben Zustand (AK-20).
+                _reviews = changed.Reviews;
+                return InvokeAsync(StateHasChanged);
+            });
+        await _hub.StartAsync();
+        await _hub.InvokeAsync(JobStatusHub.WatchDashboardMethodName);
+    }
+
+    private async Task ReloadAsync()
+    {
+        var open = await SagaReader.GetOpenReviewsAsync(CancellationToken.None);
+        var now = DateTimeOffset.UtcNow;
+        _reviews = open
+            .Select(v => new OpenReviewItem(
+                v.JobId,
+                v.OriginalFileName,
+                v.SubmittedBy,
+                v.ReceivedAt,
+                AgeMinutes: Math.Max(0, (long)(now - v.ReceivedAt).TotalMinutes),
+                v.CurrentState,
+                v.ContentType,
+                v.FileSizeBytes))
+            .ToList();
+    }
+
+    private void BeginDecision(Guid jobId, string decision)
+    {
+        _activeJob = jobId;
+        _decision = decision;
+        _comment = null;
+        _feedback = null;
+    }
+
+    private void CancelDecision()
+    {
+        _activeJob = null;
+        _decision = null;
+        _comment = null;
+    }
+
+    private async Task SubmitDecisionAsync(Guid jobId)
+    {
+        // Erneute serverseitige Prüfung unmittelbar vor der Entscheidung (TM-17).
+        var user = (await AuthenticationState).User;
+        var authz = await Authorization.AuthorizeAsync(user, policyName: PortalAuthPolicies.Editor);
+        if (!authz.Succeeded)
+        {
+            _feedback = "Entscheidungen erfordern die Rolle „Bearbeiter“.";
+            return;
+        }
+
+        var reviewerId = user.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)!;
+        _submitting = true;
+        try
+        {
+            // Validierung am Systemrand (CONVENTIONS §5): Ablehnen ohne Begründung
+            // wird auch hier abgewiesen (die Saga bliebe der letzte Ring).
+            if (_decision == Ablehnen && string.IsNullOrWhiteSpace(_comment))
+            {
+                _feedback = "Ablehnen erfordert eine Begründung.";
+                return;
+            }
+
+            await Reviews.RecordDecisionAsync(jobId, reviewerId, _decision!, _comment, CancellationToken.None);
+            _feedback = $"Entscheidung „{_decision}“ für Vorgang {jobId} übernommen.";
+            CancelDecision();
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Review-Entscheidung für JobId {JobId} schlug fehl", jobId);
+            _feedback = "Die Entscheidung konnte nicht übernommen werden.";
+        }
+        finally
+        {
+            _submitting = false;
+        }
+    }
+
+    private static string FormatAge(DateTimeOffset receivedAt)
+    {
+        var age = DateTimeOffset.UtcNow - receivedAt;
+        return age.TotalHours >= 24
+            ? $"{(int)age.TotalDays} d {(int)age.Hours % 24} h"
+            : $"{(int)age.TotalMinutes} min";
+    }
+
+    public void Dispose()
+    {
+        if (_hub is not null)
+        {
+            _ = _hub.DisposeAsync();
+        }
+    }
+}
