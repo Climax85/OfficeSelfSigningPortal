@@ -56,12 +56,13 @@ Detailgrad richtet sich an Angriffsfläche und Entscheidungsrelevanz, nicht an T
 
 Artefakte sind Markdown-Dateien in `.scratch/<feature>/`, strikt im Template-Format. Templates sind **Contracts, keine Dokumente**: stabile IDs, eindeutige Pflichtabschnitte, knapp.
 
-### Sprachregel (Skills englisch, Artefakte deutsch)
+### Sprachregel (Dokumentation deutsch, Code englisch)
 
+- **Markdown-Dokumentation ist deutsch**: Artefakte — Templates und alle Instanzen in `.scratch/<feature>/` — werden vollständig auf Deutsch befüllt, Überschriften exakt aus dem Template übernommen. Ebenso deutsch: Anwendungsdoku, Tickets/Epic-Bodies, ADRs, `CONTEXT.md`, `STATUS.md`.
+- **Code ist englisch**: Identifier und Variablennamen, Funktions-/Methodennamen, Klassen/Types, Testnamen, Kommentare (inline, XML-Doc, Begründungskommentare), Commit-Messages (imperativ) und Branch-Namen. Keine deutschen Begriffe in Code-Dateien — auch nicht in Strings, Log- oder Fehlermeldungen.
 - SKILL.md-Dateien des Skill-Sets sind englisch.
-- Artefakte — Templates und alle Instanzen in `.scratch/<feature>/` — werden vollständig auf Deutsch befüllt, Überschriften exakt aus dem Template übernommen.
 - Contract-Werte (Abschnittsnamen wie „Pfade", „Offene Entscheidungen", „Neue Schnittstellen/Datenflüsse", Phasen-Enum, Statuswerte wie `offen / entwurf / fertig`) bleiben deutsch und werden in englischen SKILL.md-Dateien **verbatim zitiert — nie übersetzt oder paraphrasiert**. Die deutsche Zeichenkette im Template ist der Contract.
-- Es gibt keinen Übersetzungsschritt im Workflow: Ein Skill erzeugt ein Artefakt, indem er das deutsche Template im Format befüllt.
+- Es gibt keinen Übersetzungsschritt im Workflow: Ein Skill erzeugt ein Artefakt, indem er das deutsche Template im Format befüllt; beim Schreiben von Code gilt die englische Regel direkt, ohne Rückfrage.
 
 ### Template-Standort
 
