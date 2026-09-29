@@ -35,18 +35,21 @@ Alternative: `dotnet user-secrets set --project src/OfficeSelfSigningPortal.AppH
 (ggf. Prompt beim AppHost-Start).
 
 Das Keycloak-Dev-Realm (`keycloak/realm.json`) enthält absichtlich **keine** Nutzer
-oder Credentials — Testuser legt das idempotente Skript an (Admin-Credentials
-kommen aus denselben Quellen wie der AppHost, niemals aus dem Repository):
+oder Credentials — Testuser legt das idempotente Skript an. Es liest Admin-
+Credentials und (nach dem ersten AppHost-Start) die Keycloak-URL aus den
+**User-Secrets des AppHost**; nichts davon landet im Repository (REQ-24):
 
 ```powershell
-# KEYCLOAK_URL = http-Endpunkt des keycloak-Containers aus dem Aspire-Dashboard
-$env:KEYCLOAK_URL = "http://localhost:<port>"
-$env:DEV_USER_PASSWORD = "<initiales-passwort-optional>"   # sonst Zufall (einmalig ausgegeben)
 ./tools/keycloak-dev-users.ps1
+# optional mit explizitem Passwort für alle Testuser:
+$env:DEV_USER_PASSWORD = "<initiales-passwort>"   # sonst Zufall (einmalig ausgegeben)
 ```
 
-Legt synchronisiert an: `alice` (Einreicher), `bob` (Einreicher + Bearbeiter),
-`carol` (Admin). Wiederholte Aufrufe aktualisieren Passwort/Gruppen.
+Auflösung je Wert (Parameter > Umgebung > User-Secrets): `-KeycloakUrl` /
+`KEYCLOAK_URL` / User-Secret `Resources:keycloak:http:port`; Admin aus
+`Parameters:keycloak-admin[-password]`. Legt synchronisiert an: `alice`
+(Einreicher), `bob` (Einreicher + Bearbeiter), `carol` (Admin). Wiederholte
+Aufrufe aktualisieren Passwort/Gruppen.
 
 ## AppHost starten
 

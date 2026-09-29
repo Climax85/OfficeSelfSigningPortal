@@ -3,22 +3,26 @@
 # Legt die Testuser des Dev-Realms an bzw. synchronisiert Passwort/Gruppen:
 #   alice -> Einreicher, bob -> Einreicher+Bearbeiter, carol -> Admin
 #
-# Credentials stammen ausschließlich aus der lokalen Umgebung (REQ-24, TM-12) —
-# dieselben Quellen, die der Aspire-AppHost verwendet:
-#   - Admin:        Parameters__keycloak-admin / Parameters__keycloak-admin-password
-#                   (User-Secrets des AppHost oder Umgebungsvariablen)
-#   - User-Passwort: DEV_USER_PASSWORD (optional; sonst Zufall, einmalig ausgegeben)
-#   - Keycloak-URL:  KEYCLOAK_URL (Aspire vergibt dynamische Ports — Wert aus dem
-#                    Aspire-Dashboard, Endpunkt "keycloak" http)
+# Auflösung der Werte (jeweils Parameter > Umgebung > User-Secrets des AppHost):
+#   - Keycloak-URL:    -KeycloakUrl / KEYCLOAK_URL / User-Secret
+#                      "Resources:keycloak:http:port" (von Aspire persistiert —
+#                      existiert erst nach dem ersten AppHost-Start)
+#   - Admin:           -AdminUser -AdminPassword /
+#                      Parameters__keycloak-admin[-password] /
+#                      User-Secrets "Parameters:keycloak-admin[-password]"
+#   - User-Passwort:   -DevPassword / DEV_USER_PASSWORD — sonst Zufall (einmalig sichtbar)
+#
+# Credentials liegen ausschließlich lokal (User-Secrets des AppHost, REQ-24, TM-12) —
+# nicht im Repository, nicht in diesem Skript.
 #
 # Aufruf (AppHost läuft):
-#   pwsh ./tools/keycloak-dev-users.ps1 -KeycloakUrl http://localhost:<port>
+#   ./tools/keycloak-dev-users.ps1
 
 [CmdletBinding()]
 param(
-    [string]$KeycloakUrl = [Environment]::GetEnvironmentVariable('KEYCLOAK_URL'),
-    [string]$AdminUser = [Environment]::GetEnvironmentVariable('Parameters__keycloak-admin'),
-    [string]$AdminPassword = [Environment]::GetEnvironmentVariable('Parameters__keycloak-admin-password'),
+    [string]$KeycloakUrl,
+    [string]$AdminUser,
+    [string]$AdminPassword,
     [string]$DevPassword = [Environment]::GetEnvironmentVariable('DEV_USER_PASSWORD'),
     [string]$Realm = 'portal-dev'
 )
@@ -26,8 +30,62 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if (-not $KeycloakUrl) { throw 'Keycloak-URL fehlt — Parameter -KeycloakUrl oder Umgebungsvariable KEYCLOAK_URL setzen (Port aus dem Aspire-Dashboard).' }
-if (-not $AdminUser -or -not $AdminPassword) { throw 'Keycloak-Admin-Credentials fehlen — Parameters__keycloak-admin / Parameters__keycloak-admin-password setzen (vgl. docs/development-setup.md).' }
+$appHostProject = Resolve-Path (Join-Path $PSScriptRoot '..\src\OfficeSelfSigningPortal.AppHost')
+
+# User-Secrets des AppHost einmalig einlesen (dotnet user-secrets list --json).
+function Get-UserSecrets {
+    $raw = & dotnet user-secrets list --project $appHostProject --json 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $raw) { return @{} }
+    # dotnet rahmt das JSON mit //BEGIN ... //END ein — Blockgrenzen suchen.
+    $jsonStart = 0
+    while ($jsonStart -lt $raw.Count -and $raw[$jsonStart] -notmatch '\{') {
+        $jsonStart++
+    }
+    $jsonEnd = $jsonStart
+    while ($jsonEnd -lt $raw.Count -and $raw[$jsonEnd] -notmatch '^\s*\}') {
+        $jsonEnd++
+    }
+    if ($jsonStart -ge $raw.Count -or $jsonEnd -ge $raw.Count) { return @{} }
+    try {
+        $parsed = [string]::Join([Environment]::NewLine, [string[]]$raw[$jsonStart..$jsonEnd]) | ConvertFrom-Json
+        $result = @{}
+        foreach ($property in $parsed.PSObject.Properties) {
+            $result[$property.Name] = [string]$property.Value
+        }
+        return $result
+    }
+    catch {
+        return @{}
+    }
+}
+
+$userSecrets = Get-UserSecrets
+
+if (-not $KeycloakUrl) {
+    $KeycloakUrl = [Environment]::GetEnvironmentVariable('KEYCLOAK_URL')
+}
+if (-not $KeycloakUrl -and $userSecrets.ContainsKey('Resources:keycloak:http:port')) {
+    $KeycloakUrl = "http://localhost:$($userSecrets['Resources:keycloak:http:port'])"
+}
+if (-not $KeycloakUrl) {
+    throw 'Keycloak-URL nicht bestimmbar — -KeycloakUrl oder KEYCLOAK_URL setzen (Port steht im Aspire-Dashboard; nach dem ersten AppHost-Start persistiert in den User-Secrets).'
+}
+
+if (-not $AdminUser) {
+    $AdminUser = [Environment]::GetEnvironmentVariable('Parameters__keycloak-admin')
+}
+if (-not $AdminUser -and $userSecrets.ContainsKey('Parameters:keycloak-admin')) {
+    $AdminUser = $userSecrets['Parameters:keycloak-admin']
+}
+if (-not $AdminPassword) {
+    $AdminPassword = [Environment]::GetEnvironmentVariable('Parameters__keycloak-admin-password')
+}
+if (-not $AdminPassword -and $userSecrets.ContainsKey('Parameters:keycloak-admin-password')) {
+    $AdminPassword = $userSecrets['Parameters:keycloak-admin-password']
+}
+if (-not $AdminUser -or -not $AdminPassword) {
+    throw 'Keycloak-Admin-Credentials nicht gefunden — User-Secrets des AppHost prüfen (dotnet user-secrets list --project src/OfficeSelfSigningPortal.AppHost) oder -AdminUser/-AdminPassword setzen (vgl. docs/development-setup.md).'
+}
 
 $KeycloakUrl = $KeycloakUrl.TrimEnd('/')
 
