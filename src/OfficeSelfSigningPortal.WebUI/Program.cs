@@ -25,6 +25,11 @@ builder.AddServiceDefaults();
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+// CascadingAuthenticationState: AuthenticationState für AuthorizeView in SSR-
+// Prerendering und interaktiven Circuits verfügbar machen (sonst InvalidOperationException
+// "Authorization requires a cascading parameter of type Task<AuthenticationState>").
+builder.Services.AddCascadingAuthenticationState();
+
 builder.Services.AddDbContext<PortalDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("portal")));
 

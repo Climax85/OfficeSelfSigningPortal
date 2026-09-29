@@ -1,6 +1,6 @@
 @page "/vorgang/{JobId:guid}"
 @attribute [Authorize]
-@implements IDisposable
+@implements IAsyncDisposable
 @inject ISagaReviewReader SagaReader
 @inject SubmissionService Submissions
 @inject ReviewService Reviews
@@ -8,6 +8,8 @@
 @inject IAuthorizationService Authorization
 @inject ILogger<Vorgang> Logger
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject IJSRuntime JS
 
 <PageTitle>Vorgang @JobId</PageTitle>
 
@@ -80,7 +82,7 @@ else
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
-    private HubConnection? _hub;
+    private BrowserHubClient? _hub;
     private string? _status;
     private string? _reason;
     private string? _lastEvent;
@@ -95,34 +97,52 @@ else
     protected override async Task OnInitializedAsync()
     {
         await LoadStatusAsync();
-        if (_status is null || _error is not null)
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _status is null || _error is not null)
         {
             return;
         }
 
-        // Live-Status ohne Reload (AK-02): SignalR-Watch; eingehende Änderungen
-        // ersetzen die lokale Anzeige — zwei Betrachter sehen denselben Stand (AK-20).
-        _hub = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri(JobStatusHub.Route))
-            .WithAutomaticReconnect()
-            .Build();
-        _hub.On<JobStatusChangedEvent>(
-            JobStatusHub.JobStatusChangedMethod,
-            async changed =>
-            {
-                if (changed.JobId != JobId)
+        try
+        {
+            // Live-Status ohne Reload (AK-02): Browser-SignalR-Client; eingehende
+            // Änderungen ersetzen die lokale Anzeige — zwei Betrachter sehen
+            // denselben Stand (AK-20).
+            _hub = await BrowserHubClient.StartAsync(
+                JS,
+                Navigation.ToAbsoluteUri(JobStatusHub.Route),
+                this,
+                new Dictionary<string, string>
                 {
-                    return;
-                }
+                    [JobStatusHub.JobStatusChangedMethod] = nameof(OnStatusChanged),
+                });
+            await _hub.InvokeAsync(JobStatusHub.WatchJobMethodName, JobId);
+        }
+        catch (Exception ex)
+        {
+            // Erwartbarer Fall vor dem Login (Negotiate → 302 auf den IdP); alles
+            // andere (Netzwerk, Deserialisierung) gehört ins Log.
+            Logger.LogDebug(ex, "Live-Kanal nicht verfügbar — Seite läuft ohne Push.");
+            _hub = null;
+        }
+    }
 
-                _status = changed.Status;
-                _signedArtifactId = changed.SignedArtifactId;
-                // Grund/Ereignis erneut aus dem Audit-Trail anreichern (AK-05).
-                await LoadEventDetailsAsync();
-                await InvokeAsync(StateHasChanged);
-            });
-        await _hub.StartAsync();
-        await _hub.InvokeAsync(JobStatusHub.WatchJobMethodName, JobId);
+    [Microsoft.JSInterop.JSInvokable]
+    public async Task OnStatusChanged(JobStatusChangedEvent changed)
+    {
+        if (changed.JobId != JobId)
+        {
+            return;
+        }
+
+        _status = changed.Status;
+        _signedArtifactId = changed.SignedArtifactId;
+        // Grund/Ereignis erneut aus dem Audit-Trail anreichern (AK-05).
+        await LoadEventDetailsAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadStatusAsync()
@@ -200,11 +220,11 @@ else
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (_hub is not null)
         {
-            _ = _hub.DisposeAsync();
+            await _hub.DisposeAsync();
         }
     }
 }

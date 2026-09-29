@@ -34,6 +34,23 @@ Alternative: `dotnet user-secrets set --project src/OfficeSelfSigningPortal.AppH
 "Parameters:<name>" "<wert>"` — Aspire löst nicht gesetzte Parameter interaktiv nach
 (ggf. Prompt beim AppHost-Start).
 
+**Wichtig:** User-Secrets lädt der AppHost nur mit `DOTNET_ENVIRONMENT=Development`
+(bzw. `ASPNETCORE_ENVIRONMENT=Development`). Das stellt `Properties/launchSettings.json`
+beim Start über `dotnet run`/VS sicher. Ohne Development-Umgebung bleiben die
+User-Secrets wirkungslos, die Parameter werden als leer angesehen und Aspire
+generiert pro Start neue Zufallswerte — bei den persistenten Containern
+(`WithLifetime(Persistent)` + Data-Volumes) führt ein Passwortwechsel dann zu
+Auth-Fehlern gegen die alten Volumes (Volume ggf. zurücksetzen: `docker volume rm
+apphost-<hash>-postgres-data` o.ä., Dev-Daten gehen dabei verloren).
+
+**Dev-Ausnahme Transportverschlüsselung (OP-05):** Der gesamte lokale Dev-Stack
+läuft bewusst unverschlüsselt auf localhost (HTTP-Endpunkte, exakte
+`http://localhost:5000/signin-oidc` im Keycloak-Dev-Realm,
+`ASPIRE_ALLOW_UNSECURED_TRANSPORT` im AppHost-Profil). Das Threat Model verlangt
+TLS 1.2+ (OP-05) für betriebene Umgebungen — für den lokalen Aspire-Dev-Stack
+gilt diese Ausnahme explizit; betriebliche Konfigurationen müssen TLS aktivieren
+und dürfen die Dev-Realm-Datei nicht verwenden.
+
 Das Keycloak-Dev-Realm (`keycloak/realm.json`) enthält absichtlich **keine** Nutzer
 oder Credentials — Testuser legt das idempotente Skript an. Es liest Admin-
 Credentials und (nach dem ersten AppHost-Start) die Keycloak-URL aus den

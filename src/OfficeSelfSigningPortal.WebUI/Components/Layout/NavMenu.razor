@@ -1,5 +1,7 @@
-@implements IDisposable
+@implements IAsyncDisposable
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ILogger<NavMenu> Logger
 
 <nav class="nav">
     <a href="/upload">Datei einreichen</a>
@@ -14,33 +16,53 @@
 </nav>
 
 @code {
-    private HubConnection? _hub;
+    private BrowserHubClient? _hub;
     private int _unread;
 
-    protected override void OnInitialized()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender)
+        {
+            return;
+        }
+
         // In-Portal-Benachrichtigungen (AK-08): Push-Kanal für Endzustände/Rückfragen.
-        // Im Test-AuthHandler-Modus (Seam S1) trägt der Browser keine Fake-IdP-Header —
-        // der Kanal ist dort bewusst nicht verfügbar (API-Tests decken ihn ab).
-        _hub = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri(JobStatusHub.Route))
-            .WithAutomaticReconnect()
-            .Build();
-        _hub.On<VorgangNotificationEvent>(
-            JobStatusHub.VorgangNotificationMethod,
-            _ =>
-            {
-                _unread++;
-                return InvokeAsync(StateHasChanged);
-            });
-        _hub.StartAsync();
+        // Browser-Client (BrowserHubClient): sendet den Auth-Cookie nativ — ein
+        // serverseitiger Circuit-Client könnte das nicht (OIDC-Challenge am Hub).
+        // Vor dem Login (Negotiate → 302 auf den IdP) bleibt der Kanal bewusst aus.
+        try
+        {
+            _hub = await BrowserHubClient.StartAsync(
+                JS,
+                Navigation.ToAbsoluteUri(JobStatusHub.Route),
+                this,
+                new Dictionary<string, string>
+                {
+                    [JobStatusHub.VorgangNotificationMethod] = nameof(OnNotification),
+                });
+            await _hub.InvokeAsync(JobStatusHub.WatchNotificationsMethodName);
+        }
+        catch (Exception ex)
+        {
+            // Erwartbarer Fall vor dem Login (Negotiate → 302 auf den IdP); alles
+            // andere (Netzwerk, Deserialisierung) gehört ins Log.
+            Logger.LogDebug(ex, "Live-Kanal nicht verfügbar — Seite läuft ohne Push.");
+            _hub = null;
+        }
     }
 
-    public void Dispose()
+    [Microsoft.JSInterop.JSInvokable]
+    public Task OnNotification(VorgangNotificationEvent notification)
+    {
+        _unread++;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
     {
         if (_hub is not null)
         {
-            _ = _hub.DisposeAsync();
+            await _hub.DisposeAsync();
         }
     }
 }
