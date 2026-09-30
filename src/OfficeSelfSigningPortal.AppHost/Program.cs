@@ -1,7 +1,27 @@
+using System.Net.Http.Headers;
 using System.Reflection;
 using Aspire.Hosting.ApplicationModel;
+using Microsoft.Extensions.Configuration;
 
 var builder = DistributedApplication.CreateBuilder(args);
+
+// Deployment-Profil (Anhang E, AK-57): 'baseline' (Default) | 'hardened'. Wählbar per
+// Kommandozeile (--Deployment:Profile=hardened), Umgebungsvariable (Deployment__Profile)
+// oder appsettings.json — aufgelöst in dieser Priorität. Das Profil steuert Engine-Stages
+// und Härtung des Deployments; das Schlüsselmanagement des SigningService bleibt davon
+// unberührt (AppHost = Dev-Umgebung, AK-54).
+var profileConfiguration = new ConfigurationBuilder()
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
+    .AddEnvironmentVariables()
+    .AddCommandLine(args)
+    .Build();
+var deploymentProfile = profileConfiguration["Deployment:Profile"] ?? "baseline";
+if (deploymentProfile is not ("baseline" or "hardened"))
+{
+    throw new InvalidOperationException(
+        $"Unbekanntes Deployment-Profil '{deploymentProfile}' (Deployment:Profile, " +
+        "gültig: baseline | hardened).");
+}
 
 // Dev-Credentials ausschließlich via Parameter (User-Secrets/Umgebungsvariablen) —
 // niemals im Repository (REQ-24, TM-12). Setup: docs/development-setup.md
@@ -83,6 +103,19 @@ var workerService = builder.AddProject<Projects.OfficeSelfSigningPortal_WorkerSe
     .WaitFor(postgres)
     .WaitFor(rabbitmq)
     .WaitFor(mailpit);
+
+if (deploymentProfile == "hardened")
+{
+    // Anhang E/AK-57: Profil hardened aktiviert die AMSI-Bridge-Stage (REQ-12,
+    // ADR-0004). Die Bridge läuft auf einem Windows-Host außerhalb Aspire; ihre URL
+    // ist betriebsseitig zu liefern (Parameter amsi-bridge-url — ohne Angabe verweigert
+    // der AppHost-Start, fail-fast). Ausfall/Timeout der Bridge führt zur Policy zu
+    // Inconclusive + Review-Pflicht (TM-15/AK-26) — niemals Auto-Signing.
+    var amsiBridgeUrl = builder.AddParameter("amsi-bridge-url");
+    workerService = workerService
+        .WithEnvironment("Scanning__Engines__AmsiEnabled", "true")
+        .WithEnvironment("Scanning__Engines__AmsiBridgeUrl", amsiBridgeUrl);
+}
 
 var signingService = builder.AddProject<Projects.OfficeSelfSigningPortal_SigningService>("signingservice")
     // Dev-Profil: LocalDevKeyProvider ist ausschließlich hier zulässig (AK-54, TC-35).
