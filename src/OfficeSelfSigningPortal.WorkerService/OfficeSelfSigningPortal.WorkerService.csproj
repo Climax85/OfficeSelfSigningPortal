@@ -8,6 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Unit-Seam für SmtpEmailSender.CreateClient (TLS-Zwang-Verifikation, TM-11). -->
+    <InternalsVisibleTo Include="OfficeSelfSigningPortal.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\OfficeSelfSigningPortal.ServiceDefaults\OfficeSelfSigningPortal.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Ossp.Contracts\Ossp.Contracts.csproj" />
     <ProjectReference Include="..\Ossp.Audit\Ossp.Audit.csproj" />
@@ -16,6 +21,7 @@
   <ItemGroup>
     <PackageReference Include="DefenceTechSecurity.Yarax" Version="1.1.0" />
     <PackageReference Include="DefenceTechSecurity.Yarax.Native" Version="1.15.0" />
+    <PackageReference Include="MailKit" Version="4.13.0" />
     <PackageReference Include="MassTransit" Version="8.5.7" />
     <PackageReference Include="MassTransit.EntityFrameworkCore" Version="8.5.7" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.5.7" />

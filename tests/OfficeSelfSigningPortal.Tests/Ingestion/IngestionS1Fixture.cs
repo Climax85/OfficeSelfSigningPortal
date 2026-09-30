@@ -18,6 +18,30 @@ public sealed class IngestionS1Fixture : IAsyncLifetime
 
     public PortalWebDbFactory Factory { get; private set; } = null!;
 
+    /// <summary>Liefert den Body der jüngsten Outbox-Nachricht eines Typs (Seam S1, Diagnose/Assert).</summary>
+    public async Task<string?> GetOutboxMessageBodyAsync(Guid jobId, string messageTypeSuffix)
+    {
+        const string query = """
+            SELECT "Body" FROM "OutboxMessage"
+            WHERE "MessageType" LIKE @suffix AND "Body" LIKE @jobId
+            ORDER BY "SequenceNumber" DESC LIMIT 1
+            """;
+
+        await using var connection = new Npgsql.NpgsqlConnection(_postgres.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = new Npgsql.NpgsqlCommand(query, connection);
+        command.Parameters.AddWithValue("suffix", $"%{messageTypeSuffix}");
+        command.Parameters.AddWithValue("jobId", $"%{jobId}%");
+        return await command.ExecuteScalarAsync() as string;
+    }
+
+    /// <summary>Prüft, dass eine Outbox-Nachricht eines Typs einen Body-Fragment führt (Seam S1).</summary>
+    public async Task<bool> OutboxMessageBodyContainsAsync(Guid jobId, string messageTypeSuffix, string bodyFragment)
+    {
+        var body = await GetOutboxMessageBodyAsync(jobId, messageTypeSuffix);
+        return body?.Contains(bodyFragment, StringComparison.Ordinal) == true;
+    }
+
     public async Task InitializeAsync()
     {
         await _postgres.StartAsync();

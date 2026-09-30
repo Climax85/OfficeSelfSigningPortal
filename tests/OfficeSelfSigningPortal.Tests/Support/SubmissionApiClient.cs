@@ -16,11 +16,16 @@ public sealed class SubmissionApiClient
     private readonly HttpClient _client;
     private string? _antiforgeryToken;
 
-    public SubmissionApiClient(HttpClient client, string user, string groups)
+    /// <param name="email">Optionaler E-Mail-Claim des Fake-IdP (X-Test-Email, Ticket 10).</param>
+    public SubmissionApiClient(HttpClient client, string user, string groups, string? email = null)
     {
         _client = client;
         _client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, user);
         _client.DefaultRequestHeaders.Add(TestAuthHandler.GroupsHeader, groups);
+        if (email is not null)
+        {
+            _client.DefaultRequestHeaders.Add(TestAuthHandler.EmailHeader, email);
+        }
     }
 
     public async Task<HttpResponseMessage> PostSubmissionAsync(string fileName, byte[] content)

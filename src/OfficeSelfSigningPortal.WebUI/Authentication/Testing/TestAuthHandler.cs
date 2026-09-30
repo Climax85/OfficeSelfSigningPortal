@@ -25,6 +25,9 @@ public sealed class TestAuthHandler : AuthenticationHandler<TestAuthHandlerOptio
     public const string UserHeader = "X-Test-User";
     public const string GroupsHeader = "X-Test-Groups";
 
+    /// <summary>Optional: simuliert den E-Mail-Claim des IdP (Ticket 10, REQ-08).</summary>
+    public const string EmailHeader = "X-Test-Email";
+
     /// <summary>
     /// Optional: simuliert einen falsch konfigurierten IdP, der Rollen-Claims
     /// direkt liefert (RV-05) — dürfen nach AK-32 keine Berechtigung erzeugen.
@@ -56,6 +59,11 @@ public sealed class TestAuthHandler : AuthenticationHandler<TestAuthHandlerOptio
             {
                 identity.AddClaim(new Claim(Options.GroupClaimType, group));
             }
+        }
+
+        if (Request.Headers.TryGetValue(EmailHeader, out var email) && !string.IsNullOrWhiteSpace(email))
+        {
+            identity.AddClaim(new Claim(ClaimTypes.Email, email.ToString()));
         }
 
         if (Request.Headers.TryGetValue(RolesHeader, out var roles))
