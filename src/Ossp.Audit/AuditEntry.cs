@@ -45,4 +45,7 @@ public static class AuditCategories
 
     /// <summary>Signier-Evidenz (Ticket 08, REQ-18/TM-08) — ausschließlich Metadaten, kein Inhalt.</summary>
     public const string Signing = "signing";
+
+    /// <summary>Retention-Löschung von Blob-Daten (Ticket 11, REQ-18/REQ-19) — Metadaten bleiben bestehen.</summary>
+    public const string Deletion = "deletion";
 }

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using OfficeSelfSigningPortal.WorkerService;
 using OfficeSelfSigningPortal.WorkerService.Data;
 using OfficeSelfSigningPortal.WorkerService.Messaging;
+using OfficeSelfSigningPortal.WorkerService.Retention;
 using OfficeSelfSigningPortal.WorkerService.Saga;
 using OfficeSelfSigningPortal.WorkerService.Scanning;
 using OfficeSelfSigningPortal.WorkerService.Scanning.Vba;
@@ -50,6 +51,15 @@ if (scanEngines.AmsiEnabled)
 builder.Services.AddSingleton<ScanOrchestrator>();
 
 builder.Services.AddSingleton<IArtifactBlobStore>(_ => new PostgresArtifactBlobStore(portalConnectionString));
+
+// Retention-Job (Ticket 11, REQ-19): löscht Original- und Signatur-Blobs nach der
+// konfigurierbaren Frist (Default 90 Tage) ab Signierung; Audit-Bestand bleibt
+// append-only bestehen. Der Blob-Löschpfad ist bewusst auf diesen Job beschränkt.
+builder.Services.AddOptions<RetentionOptions>().BindConfiguration(RetentionOptions.SectionName);
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<RetentionExecutor>();
+builder.Services.AddSingleton<IRetentionBlobStore>(_ => new PostgresRetentionBlobStore(portalConnectionString));
+builder.Services.AddHostedService<RetentionJob>();
 
 // Transportwahl: Produktion/Aspire = RabbitMQ; Test-Suites setzen OsspBus:Transport=InMemory.
 var transport = builder.Configuration.GetValue<string>("OsspBus:Transport") ?? "RabbitMQ";
