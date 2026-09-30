@@ -61,6 +61,25 @@ Startet: WebUI, WorkerService, SigningService sowie PostgreSQL (Datenbanken
 `portal`, `worker`, `signing`), RabbitMQ, Keycloak (inkl. Realm-Import) und MailPit
 als Container. Die Dashboard-URL zeigt Ports und Logs.
 
+### Deployment-Profil wählen (Anhang E, AK-57)
+
+Standard ist `baseline` (AMSI-Stage nicht deployt → `Absent`). Das Profil `hardened`
+aktiviert die AMSI-Bridge-Stage (REQ-12, ADR-0004) — die Bridge läuft auf einem
+Windows-Host außerhalb Aspire, ihr Endpunkt ist betriebsseitig zu liefern:
+
+```bash
+# Bridge-Endpunkt (User-Secret oder Umgebungsvariable):
+dotnet user-secrets set --project src/OfficeSelfSigningPortal.AppHost "Parameters:amsi-bridge-url" "https://<windows-host>:<port>"
+# oder: export Parameters__amsi-bridge-url="https://<windows-host>:<port>"
+
+# Profilwahl (eine der drei äquivalenten Varianten):
+dotnet run --project src/OfficeSelfSigningPortal.AppHost -- --Deployment:Profile=hardened
+# oder: export Deployment__Profile=hardened
+```
+
+Ohne gesetzte Bridge-URL verweigert der AppHost-Start im Profil `hardened`
+(fail-fast). Smoke-Checks je Profil: Betriebsdoku §14.5.
+
 ## EF Core
 
 Pro Dienst existiert ein DbContext mit Design-Time-Factory und Migrations:
