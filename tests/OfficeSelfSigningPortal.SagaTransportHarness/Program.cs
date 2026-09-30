@@ -223,7 +223,7 @@ async Task<int> CountAuditTrailEntriesAsync(Guid id, string category)
 
 static ScanRequested CreateScanRequested(Guid id) => new(
     id, Guid.NewGuid(), Convert.ToHexString(System.Security.Cryptography.SHA256.HashData("blob"u8)),
-    "doku.xlsm", "xlsm", 1024, "submitter-1", DateTimeOffset.UtcNow);
+    "doku.xlsm", "xlsm", 1024, "submitter-1", "submitter-1@example.org", DateTimeOffset.UtcNow);
 
 static ScanCompleted CreateScanCompleted(Guid id, Verdict verdict) => new(
     id, verdict, Score: verdict == Verdict.Clean ? 5 : 45, "scoring-v0.1;ruleset-2025-09",

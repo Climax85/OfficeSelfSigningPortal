@@ -101,7 +101,7 @@ public sealed class ScanExecutionConsumerTests : IAsyncLifetime
     private ScanRequested CreateRequest(Guid jobId, string contentSha256) =>
         new(JobId: jobId, ArtifactId: StubBlobStore.ArtifactId, ContentSha256: contentSha256,
             OriginalFileName: "test.xlsm", ContentType: "xlsm", FileSizeBytes: _blob.LongLength,
-            SubmittedBy: "user", RequestedAt: DateTimeOffset.UtcNow);
+            SubmittedBy: "user", SubmitterEmail: null, RequestedAt: DateTimeOffset.UtcNow);
 
     private sealed class StubBlobStore(byte[] content, string contentSha256) : IArtifactBlobStore
     {

@@ -90,7 +90,10 @@
 
             var userId = (await AuthenticationState).User.FindFirstValue(
                 System.Security.Claims.ClaimTypes.NameIdentifier)!;
-            var outcome = await Submissions.SubmitAsync(fileName, content, userId, CancellationToken.None);
+            var userEmail = (await AuthenticationState).User.FindFirstValue(
+                System.Security.Claims.ClaimTypes.Email)
+                ?? (await AuthenticationState).User.FindFirstValue("email");
+            var outcome = await Submissions.SubmitAsync(fileName, content, userId, userEmail, CancellationToken.None);
 
             switch (outcome)
             {

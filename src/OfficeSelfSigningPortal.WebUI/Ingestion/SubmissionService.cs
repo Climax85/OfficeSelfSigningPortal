@@ -26,8 +26,13 @@ public sealed class SubmissionService(
 {
     private const string MacroFreeHint = "Kein Makro enthalten: Die Datei ist makrofrei und muss nicht signiert werden.";
 
+    /// <param name="submittedBy">IdP-Objekt-ID des Einreichers (sub-Claim).</param>
+    /// <param name="submitterEmail">
+    /// E-Mail-Claim des IdP (kann fehlen); Zustellbasis der E-Mail-Benachrichtigung
+    /// (REQ-08, Ticket 10) — wird als SubmitterEmail im ScanRequested-Vertrag geführt.
+    /// </param>
     public async Task<SubmissionOutcome> SubmitAsync(
-        string originalFileName, byte[] content, string submittedBy, CancellationToken cancellationToken)
+        string originalFileName, byte[] content, string submittedBy, string? submitterEmail, CancellationToken cancellationToken)
     {
         var verdict = IngestionValidator.Validate(originalFileName, content, options.Value);
 
@@ -58,6 +63,7 @@ public sealed class SubmissionService(
             ContentType: verdict is Accepted a ? a.ContentType : string.Empty,
             FileSizeBytes: content.LongLength,
             SubmittedBy: submittedBy,
+            SubmitterEmail: submitterEmail,
             RequestedAt: now);
 
         var (status, reason) = verdict switch

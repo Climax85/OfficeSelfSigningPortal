@@ -127,6 +127,7 @@ public sealed class AnalysisSaga : MassTransitStateMachine<AnalysisSagaState>
                     ctx.Saga.ContentType = msg.ContentType;
                     ctx.Saga.FileSizeBytes = msg.FileSizeBytes;
                     ctx.Saga.SubmittedBy = msg.SubmittedBy;
+                    ctx.Saga.SubmitterEmail = msg.SubmitterEmail;
                     ctx.Saga.ReceivedAt = msg.RequestedAt;
                     await AuditAsync(ctx, SagaStateNames.Eingereicht, "Upload persistiert", msg.SubmittedBy, msg.OriginalFileName);
                 })
@@ -140,11 +141,17 @@ public sealed class AnalysisSaga : MassTransitStateMachine<AnalysisSagaState>
                 .TransitionTo(ScanLaeuft),
             When(MakrofreiErkannt)
                 .ThenAsync(async ctx =>
-                    await AuditAsync(ctx, SagaStateNames.NichtSignierbar, "Datei makrofrei — nicht signierbar", "system:saga", null))
+                {
+                    await AuditAsync(ctx, SagaStateNames.NichtSignierbar, "Datei makrofrei — nicht signierbar", "system:saga", null);
+                    await ctx.Publish(Benachrichtigung(ctx, SagaStateNames.NichtSignierbar));
+                })
                 .TransitionTo(NichtSignierbar),
             When(AufgabeFehlgeschlagen, ctx => ctx.Message.Stage == "ingestion")
                 .ThenAsync(async ctx =>
-                    await AuditAsync(ctx, SagaStateNames.Abgelehnt, "Upload-Regel verletzt", "system:saga", ctx.Message.Reason))
+                {
+                    await AuditAsync(ctx, SagaStateNames.Abgelehnt, "Upload-Regel verletzt", "system:saga", ctx.Message.Reason);
+                    await ctx.Publish(Benachrichtigung(ctx, SagaStateNames.Abgelehnt));
+                })
                 .TransitionTo(Abgelehnt));
 
         During(ScanLaeuft,
@@ -186,21 +193,30 @@ public sealed class AnalysisSaga : MassTransitStateMachine<AnalysisSagaState>
                 .TransitionTo(ReviewAusstehend),
             When(ScanErgebnisEingegangen, ctx => ctx.Message.Verdict == Verdict.Malicious)
                 .ThenAsync(async ctx =>
+                {
                     await AuditAsync(
                         ctx,
                         SagaStateNames.Abgelehnt,
                         $"Scan Malicious (Score {ctx.Message.Score}, {ctx.Message.ScoreVersion}) — abgelehnt",
                         "system:saga",
-                        // Security-Team-Benachrichtigung verdrahtet Ticket 10 (E-Mail-Pfad).
-                        "Security-Benachrichtigung folgt (Ticket 10)"))
+                        // REQ-13: Ablehnung plus Security-Team-Benachrichtigung (Status + Link).
+                        "Security-Team-Benachrichtigung ausgelöst");
+                    await ctx.Publish(Benachrichtigung(ctx, SagaStateNames.Abgelehnt, securityTeam: true));
+                })
                 .TransitionTo(Abgelehnt),
             When(ScanErgebnisEingegangen, ctx => ctx.Message.Verdict == Verdict.Error)
                 .ThenAsync(async ctx =>
-                    await AuditAsync(ctx, SagaStateNames.Fehler, "Scan-Fehler", "system:saga", ctx.Message.ScoreVersion))
+                {
+                    await AuditAsync(ctx, SagaStateNames.Fehler, "Scan-Fehler", "system:saga", ctx.Message.ScoreVersion);
+                    await ctx.Publish(Benachrichtigung(ctx, SagaStateNames.Fehler));
+                })
                 .TransitionTo(Fehler),
             When(AufgabeFehlgeschlagen, ctx => ctx.Message.Stage == "scan")
                 .ThenAsync(async ctx =>
-                    await AuditAsync(ctx, SagaStateNames.Fehler, "Scan nach Retry-Limit fehlgeschlagen", "system:saga", ctx.Message.Reason))
+                {
+                    await AuditAsync(ctx, SagaStateNames.Fehler, "Scan nach Retry-Limit fehlgeschlagen", "system:saga", ctx.Message.Reason);
+                    await ctx.Publish(Benachrichtigung(ctx, SagaStateNames.Fehler));
+                })
                 .TransitionTo(Fehler));
 
         During(ReviewAusstehend,
@@ -239,11 +255,18 @@ public sealed class AnalysisSaga : MassTransitStateMachine<AnalysisSagaState>
                 .TransitionTo(SignierungAngefragt),
             When(ReviewEntscheidungEingegangen, ctx => ctx.Message.Decision == ReviewDecisionValues.Ablehnen)
                 .ThenAsync(async ctx =>
-                    await AuditAsync(ctx, SagaStateNames.Abgelehnt, "Review-Ablehnung", ctx.Message.ReviewerId, ctx.Message.Comment))
+                {
+                    await AuditAsync(ctx, SagaStateNames.Abgelehnt, "Review-Ablehnung", ctx.Message.ReviewerId, ctx.Message.Comment);
+                    await ctx.Publish(Benachrichtigung(ctx, SagaStateNames.Abgelehnt));
+                })
                 .TransitionTo(Abgelehnt),
             When(ReviewEntscheidungEingegangen, ctx => ctx.Message.Decision == ReviewDecisionValues.Rueckfrage)
                 .ThenAsync(async ctx =>
-                    await AuditAsync(ctx, SagaStateNames.RueckfrageAusstehend, "Review-Rückfrage gestellt", ctx.Message.ReviewerId, ctx.Message.Comment))
+                {
+                    await AuditAsync(ctx, SagaStateNames.RueckfrageAusstehend, "Review-Rückfrage gestellt", ctx.Message.ReviewerId, ctx.Message.Comment);
+                    // REQ-08: Rückfragen benachrichtigen den Einreicher (Endzustände + Rückfragen).
+                    await ctx.Publish(Benachrichtigung(ctx, SagaStateNames.RueckfrageAusstehend));
+                })
                 .TransitionTo(RueckfrageAusstehend));
 
         During(RueckfrageAusstehend,
@@ -257,16 +280,17 @@ public sealed class AnalysisSaga : MassTransitStateMachine<AnalysisSagaState>
                 .ThenAsync(async ctx =>
                 {
                     // Signatur-Referenz persistieren (Download TC-27/AK-04 via T09,
-                    // Retention T11) und Benachrichtigung des Einreichers verdrahtet Ticket 10.
+                    // Retention T11) und Einreicher-Benachrichtigung auslösen (Ticket 10, REQ-08).
                     ctx.Saga.SignedArtifactId = ctx.Message.SignedArtifactId;
                     await AuditAsync(ctx, SagaStateNames.Signiert, "Signierung abgeschlossen", "system:signing-service", null);
+                    await ctx.Publish(Benachrichtigung(ctx, SagaStateNames.Signiert));
                 })
                 .TransitionTo(Signiert),
             When(SignaturFehlgeschlagen, ctx => !ctx.Message.Retryable)
                 .ThenAsync(async ctx =>
                 {
-                    // Alarm-Hook für den Betrieb/Notification-Pfad (Ticket 10); JobFailed ist
-                    // in SignierungAngefragt der fachliche Fehlerpfad (Anhang B: Fehler + Alarm).
+                    // Anhang B: Fehler + Alarm — JobFailed ist der fachliche Fehlerpfad;
+                    // der Einreicher wird über den Endzustand Fehler benachrichtigt (Ticket 10).
                     await ctx.Publish(new JobFailed(
                         ctx.Saga.CorrelationId,
                         "signing",
@@ -274,6 +298,7 @@ public sealed class AnalysisSaga : MassTransitStateMachine<AnalysisSagaState>
                         Retryable: false,
                         DateTimeOffset.UtcNow));
                     await AuditAsync(ctx, SagaStateNames.Fehler, "Signierung endgültig fehlgeschlagen", "system:signing-service", ctx.Message.Reason);
+                    await ctx.Publish(Benachrichtigung(ctx, SagaStateNames.Fehler));
                 })
                 .TransitionTo(Fehler),
             When(SignaturFehlgeschlagen, ctx => ctx.Message.Retryable)
@@ -283,7 +308,10 @@ public sealed class AnalysisSaga : MassTransitStateMachine<AnalysisSagaState>
                     await AuditAsync(ctx, SagaStateNames.SignierungAngefragt, "Signierung vorübergehend fehlgeschlagen — Retry", "system:signing-service", ctx.Message.Reason)),
             When(AufgabeFehlgeschlagen, ctx => ctx.Message.Stage == "signing")
                 .ThenAsync(async ctx =>
-                    await AuditAsync(ctx, SagaStateNames.Fehler, "Signierung nach Retry-Limit fehlgeschlagen", "system:saga", ctx.Message.Reason))
+                {
+                    await AuditAsync(ctx, SagaStateNames.Fehler, "Signierung nach Retry-Limit fehlgeschlagen", "system:saga", ctx.Message.Reason);
+                    await ctx.Publish(Benachrichtigung(ctx, SagaStateNames.Fehler));
+                })
                 .TransitionTo(Fehler));
     }
 
@@ -294,4 +322,15 @@ public sealed class AnalysisSaga : MassTransitStateMachine<AnalysisSagaState>
         string aktor,
         string? detail)
         => _audit.WriteAsync(context.Saga.CorrelationId, zustand, ereignis, aktor, detail, CancellationToken.None);
+
+    /// <summary>
+    /// E-Mail-Auslöser für den Versandpfad (Ticket 10, REQ-08): ausschließlich
+    /// Status + Einreicher-Adresse aus dem persistierten Vorgangskontext — die
+    /// Nachricht führt bewusst keine Dateinamen, Befunde oder Kommentare (TM-02/TM-11).
+    /// </summary>
+    private static BenachrichtigungAusgeloest Benachrichtigung(
+        BehaviorContext<AnalysisSagaState> context,
+        string zustand,
+        bool securityTeam = false)
+        => new(context.Saga.CorrelationId, zustand, context.Saga.SubmitterEmail, securityTeam);
 }

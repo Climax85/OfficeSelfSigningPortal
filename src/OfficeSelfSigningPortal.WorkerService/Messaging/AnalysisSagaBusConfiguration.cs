@@ -3,6 +3,7 @@ using MassTransit.EntityFrameworkCoreIntegration;
 using Microsoft.EntityFrameworkCore;
 using OfficeSelfSigningPortal.WorkerService.Data;
 using OfficeSelfSigningPortal.WorkerService.Messaging;
+using OfficeSelfSigningPortal.WorkerService.Notifications;
 using OfficeSelfSigningPortal.WorkerService.Saga;
 using Ossp.Contracts;
 
@@ -44,6 +45,8 @@ public static class AnalysisSagaBusConfiguration
 
         configurator.AddConsumer<ScanDeadLetterConsumer>();
         configurator.AddConsumer<ScanExecutionConsumer>();
+        // E-Mail-Benachrichtigungen (Ticket 10, REQ-08) — WorkerService-interner Versandpfad.
+        configurator.AddConsumer<EmailBenachrichtigungConsumer>();
     }
 
     /// <summary>
@@ -95,5 +98,21 @@ public static class AnalysisSagaBusConfiguration
         // ScanRequested sofort als "DLQ" behandeln (SagaNotFound-Fehlschläge).
         endpoint.ConfigureConsumeTopology = false;
         endpoint.ConfigureConsumer<ScanDeadLetterConsumer>(context);
+    }
+
+    /// <summary>
+    /// E-Mail-Benachrichtigungs-Endpoint (Ticket 10): Retry wie die anderen Endpunkte
+    /// (REQ-22) — E-Mail ist best-effort, ein vorübergehend nicht erreichbarer SMTP-
+    /// Server darf die Saga nicht blockieren. Keine EF-Outbox: Der Consumer hält
+    /// keinen lokalen Zustand; ein Fehlschlag nach Retry-Limit landet in der Error-Queue.
+    /// </summary>
+    public static void ConfigureEmailNotificationEndpoint(
+        IReceiveEndpointConfigurator endpoint,
+        IBusRegistrationContext context,
+        OsspRetryOptions retryOptions)
+    {
+        endpoint.UseMessageRetry(r => r.Intervals(
+            OsspBusConventions.JitteredExponentialIntervals(retryOptions.Limit, retryOptions.MinDelay, retryOptions.MaxDelay)));
+        endpoint.ConfigureConsumer<EmailBenachrichtigungConsumer>(context);
     }
 }

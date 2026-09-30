@@ -18,6 +18,13 @@ public sealed class AnalysisSagaState : SagaStateMachineInstance
     // Vorgangskontext aus ScanRequested (Anhang A) — SoD-Prüfung (REQ-17) und
     // Signierauftrag (TM-19/REQ-14) brauchen dieselben Felder.
     public string SubmittedBy { get; set; } = string.Empty;
+
+    /// <summary>
+    /// E-Mail-Adresse des Einreichers (E-Mail-Claim des IdP, Anhang-A-Feld seit
+    /// Ticket 10); null, wenn der IdP keinen liefert. Zustellbasis der E-Mail-
+    /// Benachrichtigung (REQ-08).
+    /// </summary>
+    public string? SubmitterEmail { get; set; }
     public Guid ArtifactId { get; set; }
     public string ContentSha256 { get; set; } = string.Empty;
     public string OriginalFileName { get; set; } = string.Empty;

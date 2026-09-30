@@ -197,7 +197,7 @@ public sealed class ScanEngineContainerSliceTests : IAsyncLifetime
     private static ScanRequested CreateRequest() =>
         new(JobId: Guid.NewGuid(), ArtifactId: Guid.NewGuid(), ContentSha256: "x",
             OriginalFileName: "korpus.xlsm", ContentType: "xlsm", FileSizeBytes: 1,
-            SubmittedBy: "test", RequestedAt: DateTimeOffset.UtcNow);
+            SubmittedBy: "test", SubmitterEmail: null, RequestedAt: DateTimeOffset.UtcNow);
 
     /// <summary>Pollt clamd-PING/PONG — Wait-Strategy unabhängig vom Image-Log-Format.</summary>
     private async Task WaitForClamdReadyAsync()
