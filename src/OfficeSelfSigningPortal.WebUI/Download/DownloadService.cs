@@ -35,6 +35,9 @@ public abstract record OriginalDownloadOutcome
     public sealed record Available(byte[] Content, string FileName) : OriginalDownloadOutcome;
     public sealed record Unknown : OriginalDownloadOutcome;
     public sealed record Forbidden : OriginalDownloadOutcome;
+
+    /// <summary>Der Original-Blob wurde vom Retention-Job gelöscht (AK-19, Ticket 11).</summary>
+    public sealed record Gone : OriginalDownloadOutcome;
 }
 
 /// <summary>
@@ -58,6 +61,12 @@ public sealed class DownloadService(
         if (job is null)
         {
             return new OriginalDownloadOutcome.Unknown();
+        }
+
+        if (job.Artifact is null)
+        {
+            // Retention (Ticket 11) hat den Original-Blob bereits entfernt (AK-19).
+            return new OriginalDownloadOutcome.Gone();
         }
 
         if (!string.Equals(job.SubmittedBy, currentUser, StringComparison.Ordinal))

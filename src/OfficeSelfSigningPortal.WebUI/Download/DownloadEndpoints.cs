@@ -35,6 +35,7 @@ public static class DownloadEndpoints
                 => Results.File(content, ContentType, fileDownloadName: Path.GetFileName(fileName)),
             OriginalDownloadOutcome.Unknown => Results.NotFound(),
             OriginalDownloadOutcome.Forbidden => Results.Forbid(),
+            OriginalDownloadOutcome.Gone => Results.StatusCode(StatusCodes.Status410Gone),
             _ => throw new InvalidOperationException($"Unerwarteter Ausgang: {outcome.GetType().Name}"),
         };
     }
