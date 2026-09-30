@@ -29,6 +29,7 @@ public class WorkerDbContext(DbContextOptions<WorkerDbContext> options) : DbCont
         entity.HasKey(x => x.CorrelationId);
         entity.Property(x => x.CurrentState).HasMaxLength(64);
         entity.Property(x => x.SubmittedBy).HasMaxLength(256);
+        entity.Property(x => x.SubmitterEmail).HasMaxLength(256);
         entity.Property(x => x.OriginalFileName).HasMaxLength(512);
         entity.Property(x => x.ContentType).HasMaxLength(16);
         entity.Property(x => x.ContentSha256).HasMaxLength(64);

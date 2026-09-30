@@ -14,6 +14,13 @@ public static class QueueNames
     /// <summary>Endpoint der AnalysisSaga (Zustands-/Ereignisverarbeitung, Anhang B).</summary>
     public const string AnalysisSaga = "ossp.analysis-saga";
 
+    /// <summary>
+    /// E-Mail-Benachrichtigungs-Endpoint (Ticket 10, REQ-08): WorkerService-internes
+    /// Ereignis (quert keine Service-Grenze, kein Anhang-A-Vertrag) — Namenskonvention
+    /// <see cref="OsspBusConventions"/> bleibt gleich.
+    /// </summary>
+    public const string EmailBenachrichtigung = "ossp.email-benachrichtigung";
+
     /// <summary>Dead-Letter-/Error-Queue des Scanner-Endpunkts (REQ-22, TC-16).</summary>
     public static string ScanRequestedError => ScanRequested + "_error";
 }
@@ -31,6 +38,13 @@ public static class QueueNames
 /// <param name="ContentType">"xlsm" | "docm" | "pptm".</param>
 /// <param name="FileSizeBytes">Größe des Blobs in Bytes.</param>
 /// <param name="SubmittedBy">IdP-Objekt-ID (sub-Claim).</param>
+/// <param name="SubmitterEmail">
+/// E-Mail-Adresse des Einreichers (E-Mail-Claim des IdP); null, wenn der IdP keinen
+/// liefert. Zustellbasis der E-Mail-Benachrichtigung (REQ-08, Ticket 10).
+/// Begründete Anhang-A-Erweiterung: Die Benachrichtigung läuft in der Saga
+/// (WorkerService), die keinen Zugriff auf den IdP hat — die Adresse muss den
+/// Vorgangskontext mit durchlaufen (vgl. ContentSha256 als TOCTOU-Basis).
+/// </param>
 /// <param name="RequestedAt">Zeitstempel (UTC).</param>
 public sealed record ScanRequested(
     Guid JobId,
@@ -40,4 +54,5 @@ public sealed record ScanRequested(
     string ContentType,
     long FileSizeBytes,
     string SubmittedBy,
+    string? SubmitterEmail,
     DateTimeOffset RequestedAt);

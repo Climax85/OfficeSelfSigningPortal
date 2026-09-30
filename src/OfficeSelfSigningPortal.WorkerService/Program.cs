@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using OfficeSelfSigningPortal.WorkerService;
 using OfficeSelfSigningPortal.WorkerService.Data;
 using OfficeSelfSigningPortal.WorkerService.Messaging;
+using OfficeSelfSigningPortal.WorkerService.Notifications;
 using OfficeSelfSigningPortal.WorkerService.Saga;
 using OfficeSelfSigningPortal.WorkerService.Scanning;
 using OfficeSelfSigningPortal.WorkerService.Scanning.Vba;
@@ -26,6 +27,23 @@ builder.Services.AddAuditTrail(portalConnectionString);
 builder.Services.AddSingleton<ISagaAuditWriter, SagaAuditTrailWriter>();
 
 builder.Services.AddOptions<OsspRetryOptions>().BindConfiguration(OsspRetryOptions.SectionName);
+
+// E-Mail-Benachrichtigungen (Ticket 10, REQ-08/REQ-21): optional — ohne Smtp:Host
+// ist der Versandpfad deaktiviert und läuft als NullEmailSender still mit
+// (AK-21, TC-42: kein E-Mail-Fehler, keine Blockade). Mit Host gilt TLS-Zwang
+// (TM-11); DisableCertificateValidation ausschließlich für den lokalen
+// MailPit-Dev-Container (selbstsigniert).
+builder.Services.AddOptions<SmtpOptions>().BindConfiguration(SmtpOptions.SectionName);
+builder.Services.AddOptions<NotificationOptions>().BindConfiguration(NotificationOptions.SectionName);
+var smtpOptions = builder.Configuration.GetSection(SmtpOptions.SectionName).Get<SmtpOptions>() ?? new SmtpOptions();
+if (string.IsNullOrWhiteSpace(smtpOptions.Host))
+{
+    builder.Services.AddSingleton<IEmailSender, NullEmailSender>();
+}
+else
+{
+    builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+}
 
 // Scan-Orchestrator (Ticket 05, Seam S3, REQ-12): Scoring + Engine-Stages + Blob-Zugriff.
 // ClamAV-Host/AMSI-Bridge werden betrieblich konfiguriert (Anhang E); nicht konfigurierte
@@ -78,6 +96,8 @@ builder.Services.AddMassTransit(x =>
                 AnalysisSagaBusConfiguration.ConfigureScanExecutionEndpoint(e, context, retryOptions));
             cfg.ReceiveEndpoint(QueueNames.ScanRequestedError, e =>
                 AnalysisSagaBusConfiguration.ConfigureScanDeadLetterEndpoint(e, context));
+            cfg.ReceiveEndpoint(QueueNames.EmailBenachrichtigung, e =>
+                AnalysisSagaBusConfiguration.ConfigureEmailNotificationEndpoint(e, context, retryOptions));
         });
     }
     else
@@ -99,6 +119,9 @@ builder.Services.AddMassTransit(x =>
 
             cfg.ReceiveEndpoint(QueueNames.ScanRequestedError, e =>
                 AnalysisSagaBusConfiguration.ConfigureScanDeadLetterEndpoint(e, context));
+
+            cfg.ReceiveEndpoint(QueueNames.EmailBenachrichtigung, e =>
+                AnalysisSagaBusConfiguration.ConfigureEmailNotificationEndpoint(e, context, retryOptions));
         });
     }
 });
@@ -106,5 +129,13 @@ builder.Services.AddMassTransit(x =>
 builder.Services.AddHostedService<Worker>();
 
 var app = builder.Build();
+
+var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("OfficeSelfSigningPortal.WorkerService.Startup");
+startupLogger.LogInformation(
+    string.IsNullOrWhiteSpace(smtpOptions.Host)
+        ? "E-Mail-Benachrichtigungen deaktiviert (kein Smtp:Host konfiguriert, AK-21)."
+        : "E-Mail-Benachrichtigungen aktiv über {SmtpHost}:{SmtpPort} (TLS erzwungen, TM-11).",
+    smtpOptions.Host,
+    smtpOptions.Port);
 
 await app.RunAsync();

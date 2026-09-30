@@ -1,3 +1,5 @@
+using Ossp.Contracts;
+
 namespace OfficeSelfSigningPortal.WorkerService.Saga;
 
 /// <summary>
@@ -16,6 +18,23 @@ public sealed record ValidierungAbgeschlossen(Guid JobId);
 
 /// <summary>InValidierung → NichtSignierbar ("Datei makrofrei", Anhang B).</summary>
 public sealed record MakrofreieDateiErkannt(Guid JobId);
+
+/// <summary>
+/// Auslöser für die E-Mail-Benachrichtigung (Ticket 10, REQ-08): Eintritt in einen
+/// Endzustand oder eine Rückfrage. WorkerService-intern (kein Anhang-A-Vertrag) —
+/// der Versand transportiert ausschließlich Status + Portal-Link, niemals Inhalte,
+/// Anhänge oder Befunddetails (TM-02/TM-11). <paramref name="SubmitterEmail"/> null
+/// bedeutet: IdP lieferte keine Adresse — dann bleibt der Einreicher-Versand aus.
+/// </summary>
+/// <param name="JobId">Vorgangs-ID.</param>
+/// <param name="Zustand">Erreichten Zustand (Anhang-B-Name aus <see cref="SagaStateNames"/>).</param>
+/// <param name="SubmitterEmail">E-Mail-Adresse des Einreichers (persistierter Vorgangskontext).</param>
+/// <param name="SecurityTeam">Zusätzlich an das Security-Team melden (ausschließlich Malicious-Pfad, REQ-13).</param>
+public sealed record BenachrichtigungAusgeloest(
+    Guid JobId,
+    string Zustand,
+    string? SubmitterEmail,
+    bool SecurityTeam);
 
 // Hinweis: Das dritte interne Ereignis (EinreicherAntwortEingegangen) quert seit
 // Ticket 07 die Service-Grenze WebUI → Saga und wurde deshalb als Vertragsnachricht

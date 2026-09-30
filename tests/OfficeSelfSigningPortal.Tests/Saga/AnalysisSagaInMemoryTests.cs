@@ -428,6 +428,7 @@ public sealed class AnalysisSagaInMemoryTests : IAsyncLifetime
         ContentType: "xlsm",
         FileSizeBytes: 1024,
         SubmittedBy: "submitter-1",
+        SubmitterEmail: "submitter-1@example.org",
         RequestedAt: DateTimeOffset.UtcNow);
 
     private static ScanCompleted CreateScanCompleted(Guid jobId, Verdict verdict) => new(

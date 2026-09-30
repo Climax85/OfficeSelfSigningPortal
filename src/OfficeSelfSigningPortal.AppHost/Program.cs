@@ -38,10 +38,17 @@ var keycloak = builder.AddContainer("keycloak", "quay.io/keycloak/keycloak", "la
     .WithBindMount(keycloakImportPath, "/opt/keycloak/data/import", isReadOnly: true)
     .WithLifetime(ContainerLifetime.Persistent);
 
-// MailPit als Test-SMTP (REQ-21): UI auf 8025, SMTP auf 1025.
+// MailPit als Test-SMTP (REQ-21): UI auf 8025, SMTP auf 1025. STARTTLS mit
+// auto-generiertem selbstsigniertem Zertifikat und Zwang — der Dev-Pfad durchläuft
+// damit denselben TLS-Zwang wie der Betrieb (TM-11); die Zertifikatsprüfung setzt
+// der WorkerService nur für diesen Container per Smtp:DisableCertificateValidation
+// außer Kraft (Dev-Only, siehe SmtpOptions).
 var mailpit = builder.AddContainer("mailpit", "axllent/mailpit", "latest")
     .WithHttpEndpoint(targetPort: 8025, name: "http")
     .WithEndpoint(targetPort: 1025, name: "smtp")
+    .WithEnvironment("MP_SMTP_TLS_CERT", "sans:mailpit")
+    .WithEnvironment("MP_SMTP_TLS_KEY", "sans:mailpit")
+    .WithEnvironment("MP_SMTP_REQUIRE_STARTTLS", "true")
     .WithLifetime(ContainerLifetime.Persistent);
 
 var webui = builder.AddProject<Projects.OfficeSelfSigningPortal_WebUI>("webui")
@@ -64,8 +71,18 @@ var workerService = builder.AddProject<Projects.OfficeSelfSigningPortal_WorkerSe
     // Blobs der Ingestion aus der Portal-DB (read-only, parametrisiert — kein EF-Pfad).
     .WithReference(portalDb)
     .WithReference(rabbitmq)
+    // E-Mail-Benachrichtigungen (Ticket 10, REQ-21/AK-56): Versand durch die Saga über
+    // MailPit — Verbindung, Portal-Link und Dev-Empfänger für das Security-Team.
+    .WithEnvironment("Smtp__Host", mailpit.GetEndpoint("smtp").Property(EndpointProperty.Host))
+    .WithEnvironment("Smtp__Port", mailpit.GetEndpoint("smtp").Property(EndpointProperty.Port))
+    .WithEnvironment("Smtp__From", "portal@ossp.local")
+    .WithEnvironment("Smtp__DisableCertificateValidation", "true")
+    .WithEnvironment("Notifications__PortalBaseUrl",
+        ReferenceExpression.Create($"http://{webui.GetEndpoint("http").Property(EndpointProperty.Host)}:{webui.GetEndpoint("http").Property(EndpointProperty.Port)}"))
+    .WithEnvironment("Notifications__SecurityTeamAddress", "security-team@ossp.local")
     .WaitFor(postgres)
-    .WaitFor(rabbitmq);
+    .WaitFor(rabbitmq)
+    .WaitFor(mailpit);
 
 var signingService = builder.AddProject<Projects.OfficeSelfSigningPortal_SigningService>("signingservice")
     // Dev-Profil: LocalDevKeyProvider ist ausschließlich hier zulässig (AK-54, TC-35).

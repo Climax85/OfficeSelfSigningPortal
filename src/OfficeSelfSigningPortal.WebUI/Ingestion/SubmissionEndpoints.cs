@@ -75,12 +75,16 @@ public static class SubmissionEndpoints
         var originalFileName = Path.GetFileName(file.FileName);
         var submittedBy = user.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? throw new InvalidOperationException("sub-Claim (NameIdentifier) fehlt im authentifizierten Principal.");
+        // E-Mail-Claim des IdP (REQ-08, Ticket 10): OIDC-Mapping liefert ClaimTypes.Email,
+        // Fallback auf den rohen "email"-Claim — ohne Claim bleibt die Benachrichtigungs-
+        // Adresse null und der Versandpfad entscheidet selbstständig.
+        var submitterEmail = user.FindFirstValue(ClaimTypes.Email) ?? user.FindFirstValue("email");
 
         using var memory = new MemoryStream();
         await file.CopyToAsync(memory, cancellationToken);
         var content = memory.GetBuffer().AsMemory(0, (int)memory.Length);
 
-        var outcome = await submissions.SubmitAsync(originalFileName, content.ToArray(), submittedBy, cancellationToken);
+        var outcome = await submissions.SubmitAsync(originalFileName, content.ToArray(), submittedBy, submitterEmail, cancellationToken);
 
         return outcome switch
         {

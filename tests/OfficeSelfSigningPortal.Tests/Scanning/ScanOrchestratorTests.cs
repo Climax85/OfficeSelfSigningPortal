@@ -34,7 +34,7 @@ public sealed class ScanOrchestratorTests
     private static ScanRequested Request() =>
         new(JobId: Guid.NewGuid(), ArtifactId: Guid.NewGuid(), ContentSha256: "x",
             OriginalFileName: "test.xlsm", ContentType: "xlsm", FileSizeBytes: 1,
-            SubmittedBy: "user", RequestedAt: DateTimeOffset.UtcNow);
+            SubmittedBy: "user", SubmitterEmail: null, RequestedAt: DateTimeOffset.UtcNow);
 
     [Fact]
     public async Task Run_CleanesMakro_liefertCleanMitScoreVersionUndAbsentAmsi()
