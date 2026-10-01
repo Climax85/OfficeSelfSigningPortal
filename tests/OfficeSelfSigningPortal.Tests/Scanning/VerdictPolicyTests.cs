@@ -102,6 +102,40 @@ public sealed class VerdictPolicyTests
     }
 
     [Fact]
+    public void Decide_ClamAvFundMitAusgefallenerAmsi_ergibtMaliciousNichtInconclusive()
+    {
+        // Arrange: eindeutiger Fund hat Vorrang vor dem AMSI-Ausfall (AK-44, F1 — Regression).
+        var runs = new[]
+        {
+            Run("amsi", EngineState.Failed),
+            Run("clamav", EngineState.Ok, Neu("av", "clamav-fund", 0, source: "clamav")),
+        };
+
+        // Act
+        var verdict = VerdictPolicy.Decide(Default, Heuristik(), runs, 0, Array.Empty<ScanFinding>());
+
+        // Assert
+        Assert.Equal(Verdict.Malicious, verdict);
+    }
+
+    [Fact]
+    public void Decide_ClamAvFundMitDegradierterAmsi_ergibtMaliciousNichtInconclusive()
+    {
+        // Arrange: Degraded zählt wie Failed — der Fund bleibt eindeutig (AK-44, F1 — Regression).
+        var runs = new[]
+        {
+            Run("amsi", EngineState.Degraded),
+            Run("clamav", EngineState.Ok, Neu("av", "clamav-fund", 0, source: "clamav")),
+        };
+
+        // Act
+        var verdict = VerdictPolicy.Decide(Default, Heuristik(), runs, 0, Array.Empty<ScanFinding>());
+
+        // Assert
+        Assert.Equal(Verdict.Malicious, verdict);
+    }
+
+    [Fact]
     public void Decide_ClamAvNurOkOhneFund_keinMalicious()
     {
         // Arrange
