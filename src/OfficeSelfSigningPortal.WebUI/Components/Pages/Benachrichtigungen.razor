@@ -1,8 +1,10 @@
 @page "/benachrichtigungen"
 @attribute [Authorize]
-@implements IDisposable
+@implements IAsyncDisposable
 @inject NotificationService Notifications
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ILogger<Benachrichtigungen> Logger
 
 <PageTitle>Benachrichtigungen</PageTitle>
 
@@ -34,7 +36,7 @@ else
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
-    private HubConnection? _hub;
+    private BrowserHubClient? _hub;
     private List<NotificationItem> _items = [];
 
     protected override async Task OnInitializedAsync()
@@ -42,33 +44,54 @@ else
         var userId = (await AuthenticationState).User.FindFirstValue(
             System.Security.Claims.ClaimTypes.NameIdentifier)!;
         _items = (await Notifications.GetForUserAsync(userId, CancellationToken.None)).ToList();
-
-        _hub = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri(JobStatusHub.Route))
-            .WithAutomaticReconnect()
-            .Build();
-        _hub.On<VorgangNotificationEvent>(
-            JobStatusHub.VorgangNotificationMethod,
-            pushed =>
-            {
-                _items.Insert(0, new NotificationItem(
-                    pushed.JobId,
-                    pushed.OriginalFileName,
-                    pushed.State,
-                    $"Vorgang erreichte den Zustand {pushed.State}.",
-                    null,
-                    pushed.OccurredAt));
-                return InvokeAsync(StateHasChanged);
-            });
-        await _hub.StartAsync();
-        await _hub.InvokeAsync(JobStatusHub.WatchNotificationsMethodName);
     }
 
-    public void Dispose()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            _hub = await BrowserHubClient.StartAsync(
+                JS,
+                Navigation.ToAbsoluteUri(JobStatusHub.Route),
+                this,
+                new Dictionary<string, string>
+                {
+                    [JobStatusHub.VorgangNotificationMethod] = nameof(OnNotification),
+                });
+            await _hub.InvokeAsync(JobStatusHub.WatchNotificationsMethodName);
+        }
+        catch (Exception ex)
+        {
+            // Erwartbarer Fall vor dem Login (Negotiate → 302 auf den IdP); alles
+            // andere (Netzwerk, Deserialisierung) gehört ins Log.
+            Logger.LogDebug(ex, "Live-Kanal nicht verfügbar — Seite läuft ohne Push.");
+            _hub = null;
+        }
+    }
+
+    [Microsoft.JSInterop.JSInvokable]
+    public Task OnNotification(VorgangNotificationEvent pushed)
+    {
+        _items.Insert(0, new NotificationItem(
+            pushed.JobId,
+            pushed.OriginalFileName,
+            pushed.State,
+            $"Vorgang erreichte den Zustand {pushed.State}.",
+            null,
+            pushed.OccurredAt));
+        return InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
     {
         if (_hub is not null)
         {
-            _ = _hub.DisposeAsync();
+            await _hub.DisposeAsync();
         }
     }
 }

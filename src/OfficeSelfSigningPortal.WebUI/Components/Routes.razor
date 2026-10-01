@@ -1,11 +1,13 @@
-<Router AppAssembly="typeof(Program).Assembly">
-    <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
-    </Found>
-    <NotFound>
-        <PageTitle>Nicht gefunden</PageTitle>
-        <LayoutView Layout="typeof(Layout.MainLayout)">
-            <h1>Seite nicht gefunden</h1>
-        </LayoutView>
-    </NotFound>
-</Router>
+<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        </Found>
+        <NotFound>
+            <PageTitle>Nicht gefunden</PageTitle>
+            <LayoutView Layout="typeof(Layout.MainLayout)">
+                <h1>Seite nicht gefunden</h1>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>

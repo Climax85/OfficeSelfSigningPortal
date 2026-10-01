@@ -71,7 +71,13 @@ var mailpit = builder.AddContainer("mailpit", "axllent/mailpit", "latest")
     .WithEnvironment("MP_SMTP_REQUIRE_STARTTLS", "true")
     .WithLifetime(ContainerLifetime.Persistent);
 
+// Dev-Port fest verdrahtet: Keycloak validiert redirect_uri strikt (Port-
+// Wildcards werden von Keycloak 26 nicht unterstützt, Suffix-Globs nur am
+// Pfadende) — App-Port und Realm-Konfiguration müssen deckungsgleich sein.
 var webui = builder.AddProject<Projects.OfficeSelfSigningPortal_WebUI>("webui")
+    .WithHttpEndpoint(port: 5000, name: "http")
+    // Dev-Umgebung: s. workerservice — ohne Development fehlt blazor.web.js (404).
+    .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
     .WithReference(portalDb)
     // Ticket 07: Die Review-API liest offene Vorgänge read-only aus dem
     // Saga-State-Store (kein Schreibpfad, parametrisiertes SQL wie im SigningService).
@@ -86,6 +92,9 @@ var webui = builder.AddProject<Projects.OfficeSelfSigningPortal_WebUI>("webui")
     .WaitFor(rabbitmq);
 
 var workerService = builder.AddProject<Projects.OfficeSelfSigningPortal_WorkerService>("workerservice")
+    // Dev-Umgebung: sonst lädt der Host die Static Web Assets (u. a. blazor.web.js)
+    // nicht (UseStaticWebAssets läuft nur in Development) und wwwroot 404-et.
+    .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
     .WithReference(workerDb)
     // Lesender Artefakt-Zugriff für den Scan (Ticket 05): Der WorkerService liest die
     // Blobs der Ingestion aus der Portal-DB (read-only, parametrisiert — kein EF-Pfad).
@@ -118,6 +127,8 @@ if (deploymentProfile == "hardened")
 }
 
 var signingService = builder.AddProject<Projects.OfficeSelfSigningPortal_SigningService>("signingservice")
+    // Dev-Umgebung: s. workerservice — Static Web Assets erfordern Development.
+    .WithEnvironment("DOTNET_ENVIRONMENT", "Development")
     // Dev-Profil: LocalDevKeyProvider ist ausschließlich hier zulässig (AK-54, TC-35).
     .WithEnvironment("Deployment__Profile", "dev")
     .WithReference(signingDb)

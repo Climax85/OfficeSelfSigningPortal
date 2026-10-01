@@ -1,11 +1,13 @@
 @page "/dashboard"
 @attribute [Authorize]
-@implements IDisposable
+@implements IAsyncDisposable
 @inject ISagaReviewReader SagaReader
 @inject ReviewService Reviews
 @inject IAuthorizationService Authorization
 @inject ILogger<Dashboard> Logger
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject IJSRuntime JS
 
 <PageTitle>Bearbeiter-Dashboard</PageTitle>
 
@@ -96,7 +98,7 @@
     [CascadingParameter]
     private Task<AuthenticationState> AuthenticationState { get; set; } = default!;
 
-    private HubConnection? _hub;
+    private BrowserHubClient? _hub;
     private IReadOnlyList<OpenReviewItem>? _reviews;
     private Guid? _activeJob;
     private string? _decision;
@@ -115,22 +117,43 @@
         }
 
         await ReloadAsync();
+    }
 
-        _hub = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri(JobStatusHub.Route))
-            .WithAutomaticReconnect()
-            .Build();
-        _hub.On<OpenReviewsChangedEvent>(
-            JobStatusHub.OpenReviewsChangedMethod,
-            changed =>
-            {
-                // Live-Aktualisierung ohne Reload (AK-06): die Push-Liste ersetzt
-                // den lokalen Stand — alle Betrachter sehen denselben Zustand (AK-20).
-                _reviews = changed.Reviews;
-                return InvokeAsync(StateHasChanged);
-            });
-        await _hub.StartAsync();
-        await _hub.InvokeAsync(JobStatusHub.WatchDashboardMethodName);
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            _hub = await BrowserHubClient.StartAsync(
+                JS,
+                Navigation.ToAbsoluteUri(JobStatusHub.Route),
+                this,
+                new Dictionary<string, string>
+                {
+                    [JobStatusHub.OpenReviewsChangedMethod] = nameof(OnReviewsChanged),
+                });
+            await _hub.InvokeAsync(JobStatusHub.WatchDashboardMethodName);
+        }
+        catch (Exception ex)
+        {
+            // Erwartbarer Fall vor dem Login (Negotiate → 302 auf den IdP); alles
+            // andere (Netzwerk, Deserialisierung) gehört ins Log.
+            Logger.LogDebug(ex, "Live-Kanal nicht verfügbar — Seite läuft ohne Push.");
+            _hub = null;
+        }
+    }
+
+    [Microsoft.JSInterop.JSInvokable]
+    public Task OnReviewsChanged(OpenReviewsChangedEvent changed)
+    {
+        // Live-Aktualisierung ohne Reload (AK-06): die Push-Liste ersetzt
+        // den lokalen Stand — alle Betrachter sehen denselben Zustand (AK-20).
+        _reviews = changed.Reviews;
+        return InvokeAsync(StateHasChanged);
     }
 
     private async Task ReloadAsync()
@@ -212,11 +235,11 @@
             : $"{(int)age.TotalMinutes} min";
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (_hub is not null)
         {
-            _ = _hub.DisposeAsync();
+            await _hub.DisposeAsync();
         }
     }
 }
