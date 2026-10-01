@@ -15,9 +15,11 @@ namespace OfficeSelfSigningPortal.Tests.Signing;
 public sealed class VbaContentHasherTests
 {
     // Ermittelt via tools/reference/v3hash_reference.py über examples-temp/signcorpus.xlsm
-    // (SignCorpus.BuildVbaProject()); transcript-length = 3407 (content=1104, project=2303).
+    // (SignCorpus.BuildVbaProject()); transcript-length = 3222 (content=919, project=2303).
+    // Office-verifizierte Regel (EPPlus): REGISTERED-Libid als UTF-16 (Size = Zeichenzahl),
+    // finaler Zeilenrest wird verworfen — siehe Klassendokumentation VbaContentHasher.
     private const string SignCorpusDigest =
-        "f5495450c2aabc60f8f8d7b6d2b8c0f9d2c3a10876bb9e7e9cfed4b3bdefd0d8";
+        "4c794ea68cfe972e19f0f6a391a48d135dd2402f8afe834c783620f46264b4ba";
 
     [Fact]
     public void ComputeV3ContentHash_SignKorpus_stimmt_mit_Referenz_uerein()

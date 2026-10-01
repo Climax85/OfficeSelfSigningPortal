@@ -7,10 +7,13 @@ namespace OfficeSelfSigningPortal.SigningService.Signing;
 /// <summary>
 /// MS-OVBA-V3-Contents-Hash (§2.4.2.7): SHA-256 über
 /// <c>ContentBuffer = V3ContentNormalizedData (§2.4.2.5) || ProjectNormalizedData (§2.4.2.6)</c>.
-/// Die Implementierung folgt dem Spec-Pseudocode wörtlich; Referenz-Abgleich erfolgte
-/// gegen EPPlus (<c>V3NormalizedDataHashInputProvider</c>, interop-erprobt mit Excel),
-/// inkl. dessen Auslegung der PROJECT-Stream-Zeilen (Split auf CRLF) und der
-/// Designer-Storage-Normalisierung (§2.4.2.2, 1023-Byte-Blöcke, zero-padded).
+/// Die Implementierung folgt dem Spec-Pseudocode, mit zwei gegen echte Office-Signaturen
+/// verifizierten Abweichungen (MS Q&A 632599; deckungsgleich mit EPPlus
+/// <c>V3NormalizedDataHashInputProvider</c>, interop-erprobt mit Excel):
+/// <c>REFERENCEREGISTERED.Libid</c> wird als UTF-16 geschrieben (Size = Zeichenanzahl),
+/// und das Modul-Zeilensplitting verwirft den finalen Rest-Puffer (reine Attribut-
+/// Dokumentmodule tragen daher nichts bei). Gegen-Check: Byte-für-Byte-Digest-Vergleich
+/// mit Office-signierten Golden Files (GoldenFileSigningTests, AK-51/TC-33).
 /// </summary>
 public static class VbaContentHasher
 {
@@ -179,9 +182,14 @@ public static class VbaContentHasher
                 break;
 
             case 0x000D:
+                // Office-Abweichung von der publizierten Spec (MS Q&A 632599; EPPlus-
+                // Verhalten, an Office-signierten Golden Files verifiziert): Die Libid wird
+                // als UTF-16 geschrieben, das Size-Feld trägt die ZEICHENANZAHL (nicht die
+                // Byteanzahl). Control-/Project-Libids bleiben roh MBCS.
                 buffer.Write((ushort)0x000D);
-                buffer.Write(reference.RegisteredSizeOfLibid);
-                buffer.Write(reference.RegisteredLibid);
+                var registeredLibidText = codePage.GetString(reference.RegisteredLibid);
+                buffer.Write((uint)registeredLibidText.Length);
+                buffer.Write(Encoding.Unicode.GetBytes(registeredLibidText));
                 buffer.Write(reference.RegisteredReserved1);
                 buffer.Write(reference.RegisteredReserved2);
                 break;
@@ -270,27 +278,35 @@ public static class VbaContentHasher
     }
 
     /// <summary>
-    /// Zeilensplitting nach Spec: CR oder LF (sofern nicht Teil von CRLF) beendet eine
-    /// Zeile; nach dem letzten Zeichen wird der Rest-Puffer als letzte Zeile angehängt.
+    /// Zeilensplitting nach EPPlus-/Office-Semantik (MS Q&A 632599, gegen echte Office-
+    /// Signaturen verifiziert): Eine Zeile wird NUR angehängt, wenn das aktuelle Zeichen
+    /// 0x0A/0x0D ist und das VORHERIGE 0x0D war (am LF eines CRLF-Paars). Der finale
+    /// Rest-Puffer wird UNBEDINGT verworfen — reine Attribut-Dokumentmodule tragen
+    /// daher nichts bei (kein Name, kein LF).
     /// </summary>
     private static IEnumerable<byte[]> SplitLines(byte[] text)
     {
         var lines = new List<byte[]>();
-        var start = 0;
+        var buffer = new List<byte>();
         byte previous = 0;
-        for (var i = 0; i < text.Length; i++)
+        foreach (var ch in text)
         {
-            var current = text[i];
-            if (current == 0x0D || (current == 0x0A && previous != 0x0D))
+            if (ch == 0x0A || ch == 0x0D)
             {
-                lines.Add(text[start..i]);
-                start = i + 1;
+                if (previous == 0x0D)
+                {
+                    lines.Add(buffer.ToArray());
+                    buffer.Clear();
+                }
+            }
+            else
+            {
+                buffer.Add(ch);
             }
 
-            previous = current;
+            previous = ch;
         }
 
-        lines.Add(text[start..]);
         return lines;
     }
 

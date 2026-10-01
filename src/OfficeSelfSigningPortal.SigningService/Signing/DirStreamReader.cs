@@ -112,11 +112,23 @@ public static class DirStreamReader
                     break;
                 case 0x000D: // REFERENCEREGISTERED
                 {
+                    // MS-OVBA 2.3.4.2.2.2: Id, Size (u4 — deckt SizeOfLibid, Libid,
+                    // Reserved1 und Reserved2 ab), SizeOfLibid (u4), Libid, Reserved1
+                    // (u4), Reserved2 (u2). Das verschachtelte SizeOfLibid schreibt echtes
+                    // Office; beide Felder explizit lesen (Golden-Files, AK-51).
+                    var recordSize = reader.ReadUInt32();
                     var sizeOfLibid = reader.ReadUInt32();
+                    if (recordSize != sizeOfLibid + 10)
+                    {
+                        throw new InvalidDataException(
+                            $"REFERENCEREGISTERED: Size ({recordSize}) passt nicht zu SizeOfLibid ({sizeOfLibid}).");
+                    }
+
                     var libid = reader.ReadBytes(sizeOfLibid);
                     var reserved1 = reader.ReadUInt32();
                     var reserved2 = reader.ReadUInt16();
                     references.Add(new ReferenceEntry { RecordId = id, NameRecord = currentName ?? throw MissingName(id),
+                        RegisteredSize = recordSize,
                         RegisteredSizeOfLibid = sizeOfLibid,
                         RegisteredLibid = libid,
                         RegisteredReserved1 = reserved1,
@@ -126,13 +138,24 @@ public static class DirStreamReader
                 }
                 case 0x000E: // REFERENCEPROJECT
                 {
+                    // MS-OVBA 2.3.4.2.2.4: Id, Size (u4 — deckt SizeOfLibidAbsolute,
+                    // LibidAbsolute, SizeOfLibidRelative, LibidRelative, Major und Minor ab),
+                    // dann die Felder selbst. Das äußere Size-Feld schreibt echtes Office.
+                    var projectRecordSize = reader.ReadUInt32();
                     var sizeAbs = reader.ReadUInt32();
                     var libidAbs = reader.ReadBytes(sizeAbs);
                     var sizeRel = reader.ReadUInt32();
                     var libidRel = reader.ReadBytes(sizeRel);
                     var major = reader.ReadUInt32();
                     var minor = reader.ReadUInt16();
+                    if (projectRecordSize != sizeAbs + sizeRel + 14)
+                    {
+                        throw new InvalidDataException(
+                            $"REFERENCEPROJECT: Size ({projectRecordSize}) passt nicht zu den Libid-Größen ({sizeAbs}/{sizeRel}).");
+                    }
+
                     references.Add(new ReferenceEntry { RecordId = id, NameRecord = currentName ?? throw MissingName(id),
+                        ProjectSize = projectRecordSize,
                         ProjectSizeOfLibidAbsolute = sizeAbs,
                         ProjectLibidAbsolute = libidAbs,
                         ProjectSizeOfLibidRelative = sizeRel,
@@ -181,11 +204,18 @@ public static class DirStreamReader
                     size = reader.ReadUInt32();
                     RequireModule(reader, currentModule, id).NameUnicode = reader.ReadBytes(size);
                     break;
-                case 0x001A: // MODULESTREAMNAME (+ Reserved u4)
+                case 0x001A: // MODULESTREAMNAME (+ Reserved u2, Unicode-Größe u4, Unicode-Name)
                     size = reader.ReadUInt32();
                     var streamNameBytes = reader.ReadBytes(size);
-                    reader.ReadUInt32(); // Reserved
-                    RequireModule(reader, currentModule, id).StreamName = Encoding.GetEncoding(codePage).GetString(streamNameBytes);
+                    // MS-OVBA 2.3.4.2.3.2.3: Nach dem MBCS-Namen folgt Reserved(2)
+                    // (per Spec 0x0032) und der UTF-16-Name — beides schreibt echtes Office.
+                    var streamNameReserved = reader.ReadUInt16();
+                    var streamNameUnicodeSize = reader.ReadUInt32();
+                    var streamNameUnicode = reader.ReadBytes(streamNameUnicodeSize);
+                    var moduleWithStreamName = RequireModule(reader, currentModule, id);
+                    moduleWithStreamName.StreamName = Encoding.GetEncoding(codePage).GetString(streamNameBytes);
+                    moduleWithStreamName.StreamNameReserved = streamNameReserved;
+                    moduleWithStreamName.StreamNameUnicode = streamNameUnicode;
                     break;
                 case 0x001C: // MODULEDOCSTRING (+ folgender Unicode-Record)
                     size = reader.ReadUInt32();
@@ -225,7 +255,8 @@ public static class DirStreamReader
                     module.TypeRecordReserved = reserved;
                     break;
                 }
-                case 0x002B: // MODULETERMINATOR (Id only)
+                case 0x002B: // MODULETERMINATOR (Id + Reserved u4)
+                    RequireModule(reader, currentModule, id).TerminatorReserved = reader.ReadUInt32();
                     currentModule = null;
                     break;
                 case 0x004A: // PROJECTCOMPATVERSION
@@ -337,6 +368,9 @@ public static class DirStreamReader
         public required byte[] Name { get; set; }
         public byte[] NameUnicode { get; set; } = [];
         public string? StreamName { get; set; }
+        public ushort StreamNameReserved { get; set; }
+        public byte[] StreamNameUnicode { get; set; } = [];
+        public uint TerminatorReserved { get; set; }
         public uint? TextOffset { get; set; }
         public bool IsProcedural { get; set; }
         public uint TypeRecordReserved { get; set; }
@@ -350,6 +384,9 @@ public static class DirStreamReader
             Name = Name,
             NameUnicode = NameUnicode,
             StreamName = StreamName ?? throw new InvalidDataException("MODULE ohne MODULESTREAMNAME-Record."),
+            StreamNameReserved = StreamNameReserved,
+            StreamNameUnicode = StreamNameUnicode,
+            TerminatorReserved = TerminatorReserved,
             TextOffset = TextOffset ?? throw new InvalidDataException("MODULE ohne MODULEOFFSET-Record."),
             IsProcedural = IsProcedural,
             TypeRecordReserved = TypeRecordReserved,
