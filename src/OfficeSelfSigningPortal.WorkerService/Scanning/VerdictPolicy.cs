@@ -9,8 +9,9 @@ namespace OfficeSelfSigningPortal.WorkerService.Scanning;
 ///
 /// Verbindliche Präzedenz (TC-12–TC-19, AK-41–AK-46):
 /// 1. Verschlüsseltes VBA-Projekt oder Parser-Fehler → <c>Error</c> (Review-Pflicht, nie Clean; AK-45).
-/// 2. Ausgefallene/degradierte AMSI-Stage (nur wenn deployt, nie bei Absent) → <c>Inconclusive</c> (TC-19, AK-46).
-/// 3. ClamAV-Fund → <c>Malicious</c> (AK-44) — unabhängig vom Punktstand.
+/// 2. ClamAV-Fund → <c>Malicious</c> (AK-44) — unabhängig vom Punktstand und vom AMSI-Zustand;
+///    ein eindeutiger Fund aus einer anderen Engine verwandelt einen AMSI-Ausfall nicht in <c>Inconclusive</c> (F1).
+/// 3. Ausgefallene/degradierte AMSI-Stage (nur wenn deployt, nie bei Absent) → <c>Inconclusive</c> (TC-19, AK-46).
 /// 4. Score-Schwellwerte: &lt; CleanBelow → Clean, &lt; MaliciousAt → Suspicious, sonst Malicious (AK-41).
 /// 5. Eskalationsregeln unabhängig vom Punktstand: mraptor-Regel → mindestens Suspicious (AK-42),
 ///    kuratierte YARA-Familienregel → mindestens Malicious (AK-43).
@@ -47,14 +48,7 @@ public static class VerdictPolicy
             return Verdict.Error;
         }
 
-        // 2. AMSI nur werten, wenn die Stage deployt ist (Absent = Profil baseline → ignorieren, AK-46).
-        var amsi = engineRuns.FirstOrDefault(r => r.Engine == FindingSources.Amsi);
-        if (amsi is { State: EngineState.Failed or EngineState.Degraded })
-        {
-            return Verdict.Inconclusive;
-        }
-
-        // 3. ClamAV-Fund → Malicious unabhängig vom Punktstand (AK-44).
+        // 2. ClamAV-Fund → Malicious unabhängig vom Punktstand und vom AMSI-Zustand (AK-44, F1).
         var clamAvDetection = engineRuns.Any(r =>
             r.Engine == FindingSources.ClamAv
             && r.State == EngineState.Ok
@@ -62,6 +56,14 @@ public static class VerdictPolicy
         if (clamAvDetection)
         {
             return Verdict.Malicious;
+        }
+
+        // 3. AMSI nur werten, wenn die Stage deployt ist (Absent = Profil baseline → ignorieren, AK-46);
+        //    ohne eindeutigen Fund aus einer anderen Engine bleibt ein Ausfall Inconclusive (AK-26, TM-15).
+        var amsi = engineRuns.FirstOrDefault(r => r.Engine == FindingSources.Amsi);
+        if (amsi is { State: EngineState.Failed or EngineState.Degraded })
+        {
+            return Verdict.Inconclusive;
         }
 
         // 4. Score-basierte Verdichte.
