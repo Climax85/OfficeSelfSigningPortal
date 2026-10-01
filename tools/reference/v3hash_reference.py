@@ -214,21 +214,36 @@ def parse_dir(decompressed: bytes):
         elif rid == 0x0016:
             current_name = name_record()
         elif rid == 0x000D:
+            # MS-OVBA 2.3.4.2.2.2: Id, Size (deckt SizeOfLibid, Libid, Reserved1 und
+            # Reserved2 ab), SizeOfLibid, Libid, Reserved1, Reserved2. Das verschachtelte
+            # SizeOfLibid schreibt echtes Office — beide Felder explizit lesen.
             ref = {"record_id": rid, "name_record": current_name}
+            record_size = r.u32()
             size = r.u32()
+            if record_size != size + 10:
+                raise ValueError(f"REFERENCEREGISTERED: Size ({record_size}) passt nicht zu SizeOfLibid ({size})")
+            ref["registered_size"] = record_size
             ref["registered_size_of_libid"] = size
             ref["registered_libid"] = r.bytes(size)
             ref["registered_reserved1"] = r.u32()
             ref["registered_reserved2"] = r.u16()
             d["references"].append(ref)
         elif rid == 0x000E:
+            # MS-OVBA 2.3.4.2.2.4: Id, Size (deckt beide Libids + Major/Minor ab),
+            # dann die Felder selbst. Das äußere Size-Feld schreibt echtes Office.
             ref = {"record_id": rid, "name_record": current_name}
+            record_size = r.u32()
+            ref["project_size"] = record_size
             ref["project_size_abs"] = r.u32()
             ref["project_libid_abs"] = r.bytes(ref["project_size_abs"])
             ref["project_size_rel"] = r.u32()
             ref["project_libid_rel"] = r.bytes(ref["project_size_rel"])
             ref["project_major"] = r.u32()
             ref["project_minor"] = r.u16()
+            if record_size != ref["project_size_abs"] + ref["project_size_rel"] + 14:
+                raise ValueError(
+                    f"REFERENCEPROJECT: Size ({record_size}) passt nicht zu den Libid-Größen "
+                    f"({ref['project_size_abs']}/{ref['project_size_rel']}).")
             d["references"].append(ref)
         elif rid == 0x0033:
             ref = {"record_id": rid, "name_record": current_name}
@@ -250,8 +265,11 @@ def parse_dir(decompressed: bytes):
         elif rid == 0x0047:
             current_module["name_unicode"] = r.bytes(r.u32())
         elif rid == 0x001A:
+            # MS-OVBA 2.3.4.2.3.2.3: Nach dem MBCS-Namen folgen Reserved(2)
+            # (per Spec 0x0032) und der UTF-16-Streamname — beides schreibt echtes Office.
             current_module["stream_name"] = r.bytes(r.u32())
-            r.u32()
+            current_module["stream_name_reserved"] = r.u16()
+            current_module["stream_name_unicode"] = r.bytes(r.u32())
         elif rid == 0x001C:
             r.skip(r.u32())
             r.u16()
@@ -273,6 +291,7 @@ def parse_dir(decompressed: bytes):
             current_module["type_reserved"] = r.u32()
             current_module["procedural"] = rid == 0x0021
         elif rid == 0x002B:
+            current_module["terminator_reserved"] = r.u32()
             current_module = None
         elif rid == 0x004A:
             r.skip(r.u32())
@@ -303,15 +322,21 @@ def starts_with_ignore_case(line: bytes, prefix: bytes) -> bool:
 
 
 def split_lines(text: bytes):
+    # EPPlus-/Office-Semantik (MS Q&A 632599, gegen echte Office-Signaturen verifiziert):
+    # Eine Zeile wird NUR angehaengt, wenn das aktuelle Zeichen 0x0A/0x0D ist und das
+    # VORHERIGE 0x0D war (d.h. am LF eines CRLF-Paars). Der finale Rest-Puffer wird
+    # UNBEDINGT verworfen — reine Attribut-Dokumentmodule tragen daher nichts bei.
     lines = []
-    start = 0
+    buf = bytearray()
     previous = 0
-    for i, ch in enumerate(text):
-        if ch == 0x0D or (ch == 0x0A and previous != 0x0D):
-            lines.append(text[start:i])
-            start = i + 1
+    for ch in text:
+        if ch == 0x0A or ch == 0x0D:
+            if previous == 0x0D:
+                lines.append(bytes(buf))
+                buf = bytearray()
+        else:
+            buf.append(ch)
         previous = ch
-    lines.append(text[start:])
     return lines
 
 
@@ -351,7 +376,13 @@ def v3_content_normalized_data(d, ole) -> bytes:
         elif rid == 0x0033:
             w(u16(0x0033)); w(u32(ref["original_size_of_libid"])); w(ref["original_libid"])
         elif rid == 0x000D:
-            w(u16(0x000D)); w(u32(ref["registered_size_of_libid"])); w(ref["registered_libid"])
+            # Office-Abweichung von der Spec (MS Q&A 632599, EPPlus-Verhalten, an Golden
+            # Files verifiziert): Die Libid wird als UTF-16 geschrieben, das Size-Feld
+            # traegt die ZEICHENANZAHL (nicht die Byteanzahl). Control/Project-Libids
+            # bleiben roh MBCS.
+            libid_text = ref["registered_libid"].decode("cp%d" % d["code_page"])
+            libid_wide = libid_text.encode("utf-16-le")
+            w(u16(0x000D)); w(u32(len(libid_text))); w(libid_wide)
             w(u32(ref["registered_reserved1"])); w(u16(ref["registered_reserved2"]))
         elif rid == 0x000E:
             w(u16(0x000E)); w(u32(ref["project_size_abs"])); w(ref["project_libid_abs"])

@@ -192,8 +192,11 @@ public static class SignCorpus
     {
         WriteNameRecord(writer, name);
         var libidBytes = Encoding.GetEncoding(CodePage).GetBytes(libid);
+        // MS-OVBA 2.3.4.2.2.2: Size deckt SizeOfLibid + Libid + Reserved1 + Reserved2 ab —
+        // beide Größenfelder schreiben, so wie es echtes Office tut (Golden-Files, AK-51).
         writer.Write((ushort)0x000D);                                      // REFERENCEREGISTERED
-        writer.Write((uint)libidBytes.Length);
+        writer.Write((uint)(sizeof(uint) + libidBytes.Length + sizeof(uint) + sizeof(ushort)));
+        writer.Write((uint)libidBytes.Length);                             // SizeOfLibid
         writer.Write(libidBytes);
         writer.Write((uint)0x00000000);                                    // Reserved1
         writer.Write((ushort)0x0000);                                      // Reserved2
@@ -254,7 +257,12 @@ public static class SignCorpus
         writer.Write((ushort)0x001A);                                      // MODULESTREAMNAME
         writer.Write((uint)streamName.Length);
         writer.Write(streamName);
-        writer.Write((uint)0x00000000);                                    // Reserved
+        // MS-OVBA 2.3.4.2.3.2.3: Reserved(2) = 0x0032, dann UTF-16-Streamname —
+        // beides schreibt echtes Office (Golden-Files, AK-51).
+        var streamNameUnicode = Encoding.Unicode.GetBytes(name);
+        writer.Write((ushort)0x0032);                                      // Reserved
+        writer.Write((uint)streamNameUnicode.Length);                      // SizeOfStreamNameUnicode
+        writer.Write(streamNameUnicode);
         WriteSizedRecord(writer, 0x001C, mbcsEmpty());                     // MODULEDOCSTRING
         writer.Write((ushort)0x0048);                                      // MODULEDOCSTRINGUNICODE
         writer.Write((uint)0x00000000);                                    // Size 0
@@ -274,6 +282,7 @@ public static class SignCorpus
             writer.Write((uint)0x00000000);                                // Reserved
         }
         writer.Write((ushort)0x002B);                                      // MODULETERMINATOR
+        writer.Write((uint)0x00000000);                                    // Reserved (MS-OVBA 2.3.4.2.3.2)
 
         static byte[] mbcsEmpty() => [];
         static byte[] u32b(uint value) => [(byte)(value & 0xFF), (byte)((value >> 8) & 0xFF), (byte)((value >> 16) & 0xFF), (byte)(value >> 24)];

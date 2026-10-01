@@ -803,3 +803,4 @@ fabric.properties
 # Lokale Agent-Tooling-Verzeichnisse (Skill-Klone, Worktrees)
 .pi/
 .kilo/
+examples-temp/

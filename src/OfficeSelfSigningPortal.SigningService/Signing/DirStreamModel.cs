@@ -22,6 +22,13 @@ public sealed class ReferenceEntry
 
     public required ReferenceNameRecord NameRecord { get; init; }
 
+    /// <summary>
+    /// REFERENCEREGISTERED (0x000D): Größenfeld des Records (deckt SizeOfLibid + Libid +
+    /// Reserved1 + Reserved2 ab, MS-OVBA 2.3.4.2.2.2). Wird für den Hash nicht
+    /// reproduziert, dient aber der Validierung beim Parsen.
+    /// </summary>
+    public uint RegisteredSize { get; set; }
+
     /// <summary>REFERENCEREGISTERED (0x000D): SizeOfLibid + Libid + Reserved1 + Reserved2.</summary>
     public uint RegisteredSizeOfLibid { get; set; }
 
@@ -35,6 +42,12 @@ public sealed class ReferenceEntry
     public uint OriginalSizeOfLibid { get; set; }
 
     public byte[] OriginalLibid { get; set; } = [];
+
+    /// <summary>
+    /// REFERENCEPROJECT (0x000E): Größenfeld des Records (deckt beide Libids + Major/Minor ab,
+    /// MS-OVBA 2.3.4.2.2.4). Wird für den Hash nicht reproduziert, dient der Validierung.
+    /// </summary>
+    public uint ProjectSize { get; set; }
 
     /// <summary>REFERENCEPROJECT (0x000E): beide Libids + Major/Minor.</summary>
     public uint ProjectSizeOfLibidAbsolute { get; set; }
@@ -88,6 +101,15 @@ public sealed record ModuleEntry
 
     /// <summary>MODULESTREAMNAME (0x001A), MBCS — Name des Modul-Streams im VBA-Speicher.</summary>
     public required string StreamName { get; init; }
+
+    /// <summary>MODULESTREAMNAME: Reserved(2) vor dem Unicode-Teil (per Spec 0x0032, „MUST be ignored").</summary>
+    public ushort StreamNameReserved { get; init; }
+
+    /// <summary>MODULESTREAMNAME: StreamNameUnicode, UTF-16LE-Rohbytes.</summary>
+    public byte[] StreamNameUnicode { get; init; } = [];
+
+    /// <summary>MODULETERMINATOR (0x002B): Reserved(4).</summary>
+    public uint TerminatorReserved { get; init; }
 
     /// <summary>MODULEOFFSET (0x0031) — Position des CompressedContainer im Modul-Stream.</summary>
     public required uint TextOffset { get; init; }

@@ -1,0 +1,18 @@
+# Office-Binärformate (OLE/OOXML) — keine Zeilenenden-Konvertierung, keine Diff-Ausgabe.
+# Wichtig für die Golden Files in examples/golden/: Byte-Exaktheit für Digest-Vergleich.
+*.xlsm binary
+*.docm binary
+*.pptm binary
+*.xls  binary
+*.doc  binary
+*.ppt  binary
+*.xlsb binary
+*.xlsx binary
+*.docx binary
+*.pptx binary
+*.pdf  binary
+
+# Zertifikate/Binärartefakte
+*.cer binary
+*.pfx binary
+*.p12 binary

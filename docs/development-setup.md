@@ -51,6 +51,28 @@ Auflösung je Wert (Parameter > Umgebung > User-Secrets): `-KeycloakUrl` /
 (Einreicher), `bob` (Einreicher + Bearbeiter), `carol` (Admin). Wiederholte
 Aufrufe aktualisieren Passwort/Gruppen.
 
+## Codesigning-Dev-Zertifikat (Windows, für TC-28/Golden Files)
+
+Einmalig pro Dev-/Testmaschine (Key niemals exportierbar, nie im Repo — REQ-24, TC-31):
+
+```powershell
+New-SelfSignedCertificate -Type CodeSigning -CertStoreLocation Cert:\CurrentUser\My `
+  -Subject "CN=OSSP Dev" -KeyExportPolicy NonExportable
+```
+
+Import in **beide** Stores — `Root` allein macht die Signatur nur gültig, ohne den
+Makro-Prompt zu unterdrücken (siehe Setup-Hinweis zu TC-28 in `test-cases.md`):
+
+```powershell
+$cert = Get-Item Cert:\CurrentUser\My\<Thumbprint>
+# Root (LocalMachine, Admin) → Signatur-Kette gültig:
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root","LocalMachine")
+$store.Open("ReadWrite"); $store.Add($cert); $store.Close()
+# TrustedPublisher (CurrentUser) → kein Makro-Prompt an jedem Ort:
+$store = New-Object System.Security.Cryptography.X509Certificates.X509Store("TrustedPublisher","CurrentUser")
+$store.Open("ReadWrite"); $store.Add($cert); $store.Close()
+```
+
 ## AppHost starten
 
 ```bash
