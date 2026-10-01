@@ -97,25 +97,33 @@ public static class SignCorpus
 
     private static string BuildProjectText()
     {
-        var builder = new StringBuilder();
-        builder.AppendLine("ID=\"{11111111-2222-3333-4444-555555555555}\"");
-        builder.AppendLine("Document=ThisWorkbook/&H00000000");
-        builder.AppendLine("Module=CleanModule");
-        builder.AppendLine("BaseClass=frmTest");
-        builder.AppendLine("Package={AC9F2F90-E877-11CE-9F68-00AA00574A4F}");
-        builder.AppendLine("HelpFile=\"\"");
-        builder.AppendLine($"Name=\"{ProjectName}\"");
-        builder.AppendLine("HelpContextID=\"0\"");
-        builder.AppendLine("Description=\"OSSP signing fixture\"");
-        builder.AppendLine("VersionCompatible32=\"393222000\"");
-        builder.AppendLine("CMG=\"0604AA00EA009E049E049A089A08\"");
-        builder.AppendLine("DPB=\"B6B41AD07A30374D374DC8B3384DDC63D35C51C89D809616E325E4129493EEFDBC48EE77D47B79\"");
-        builder.AppendLine("GC=\"6664CAA0CAE07BE17BE17B\"");
-        builder.AppendLine("[Host Extender Info]");
-        builder.AppendLine("&H00000001={3832D640-CF90-11CF-8E43-00A0C911005A};VBE;&H00000000");
-        builder.AppendLine("[Workspace]");
-        builder.AppendLine("CleanModule=0, 0, 0, 0, C");
-        return builder.ToString();
+        // Explizite CRLF-Zeilenenden (kein AppendLine): Der PROJECT-Stream muss
+        // plattformunabhängig byte-identisch sein — VbaContentHasher splittet
+        // MS-OVBA 2.4.2.6-strikt auf "\r\n"; AppendLine würde unter Linux "\n"
+        // emitieren, die Projekt-Properties blieben ungehasht und der V3-Golden-
+        // Value bräche (CI-Fehler: Digest-Drift Windows/Linux).
+        var lines = new string[]
+        {
+            "ID=\"{11111111-2222-3333-4444-555555555555}\"",
+            "Document=ThisWorkbook/&H00000000",
+            "Module=CleanModule",
+            "BaseClass=frmTest",
+            "Package={AC9F2F90-E877-11CE-9F68-00AA00574A4F}",
+            "HelpFile=\"\"",
+            $"Name=\"{ProjectName}\"",
+            "HelpContextID=\"0\"",
+            "Description=\"OSSP signing fixture\"",
+            "VersionCompatible32=\"393222000\"",
+            "CMG=\"0604AA00EA009E049E049A089A08\"",
+            "DPB=\"B6B41AD07A30374D374DC8B3384DDC63D35C51C89D809616E325E4129493EEFDBC48EE77D47B79\"",
+            "GC=\"6664CAA0CAE07BE17BE17B\"",
+            "[Host Extender Info]",
+            "&H00000001={3832D640-CF90-11CF-8E43-00A0C911005A};VBE;&H00000000",
+            "[Workspace]",
+            "CleanModule=0, 0, 0, 0, C",
+        };
+
+        return string.Join("\r\n", lines) + "\r\n";
     }
 
     private static byte[] BuildDirStream()
