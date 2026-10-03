@@ -46,6 +46,9 @@ public static class JobStatusNames
 /// </summary>
 public static class SubmissionEndpoints
 {
+    /// <summary>Named-Policy des Rate-Limits für den Upload-Kanal (TM-14, SF-03).</summary>
+    public const string UploadRateLimitPolicy = "ingestion-upload";
+
     public static IEndpointRouteBuilder MapSubmissionEndpoints(this IEndpointRouteBuilder app)
     {
         var api = app.MapGroup("/api/submissions");
@@ -58,7 +61,8 @@ public static class SubmissionEndpoints
         });
 
         api.MapPost("", UploadAsync)
-            .RequireAuthorization(PortalAuthPolicies.Submitter);
+            .RequireAuthorization(PortalAuthPolicies.Submitter)
+            .RequireRateLimiting(UploadRateLimitPolicy);
 
         api.MapGet("/{jobId:guid}", GetStatusAsync);
 

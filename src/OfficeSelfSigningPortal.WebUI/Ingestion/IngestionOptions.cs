@@ -21,4 +21,10 @@ public sealed class IngestionOptions
         ["docm"] = "docm",
         ["pptm"] = "pptm",
     };
+
+    /// <summary>Anzahl erlaubter Uploads pro Fenster und Einreicher (TM-14, SF-03).</summary>
+    public int UploadRateLimitPermitLimit { get; set; } = 10;
+
+    /// <summary>Fensterlänge des Upload-Rate-Limits in Sekunden (TM-14, SF-03).</summary>
+    public int UploadRateLimitWindowSeconds { get; set; } = 60;
 }
