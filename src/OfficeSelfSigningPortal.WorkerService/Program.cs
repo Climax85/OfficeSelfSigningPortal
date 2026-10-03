@@ -51,6 +51,8 @@ else
 // Stages melden Absent statt auszufallen (AK-46).
 builder.Services.AddOptions<ScoringOptions>().BindConfiguration(ScoringOptions.SectionName);
 builder.Services.AddOptions<ScanEnginesOptions>().BindConfiguration(ScanEnginesOptions.SectionName);
+// Concurrency-Limit / Prefetch-Count am Scan-Endpoint (Ticket 37, TM-14, SF-03).
+builder.Services.AddOptions<ScanExecutionOptions>().BindConfiguration(ScanExecutionOptions.SectionName);
 builder.Services.AddSingleton<VbaProjectExtractor>();
 builder.Services.AddSingleton<HeuristicScanEngine>();
 builder.Services.AddSingleton<IScanEngine, YaraScanEngine>();
@@ -98,12 +100,14 @@ builder.Services.AddMassTransit(x =>
 
     if (transport.Equals("InMemory", StringComparison.OrdinalIgnoreCase))
     {
+        var scanExecutionOptionsInMem = builder.Configuration.GetSection(ScanExecutionOptions.SectionName)
+            .Get<ScanExecutionOptions>() ?? new ScanExecutionOptions();
         x.UsingInMemory((context, cfg) =>
         {
             cfg.ReceiveEndpoint(QueueNames.AnalysisSaga, e =>
                 AnalysisSagaBusConfiguration.ConfigureSagaEndpoint(e, context, retryOptions, useEntityFrameworkOutbox: false));
             cfg.ReceiveEndpoint(QueueNames.ScanRequested, e =>
-                AnalysisSagaBusConfiguration.ConfigureScanExecutionEndpoint(e, context, retryOptions));
+                AnalysisSagaBusConfiguration.ConfigureScanExecutionEndpoint(e, context, retryOptions, scanExecutionOptionsInMem));
             cfg.ReceiveEndpoint(QueueNames.ScanRequestedError, e =>
                 AnalysisSagaBusConfiguration.ConfigureScanDeadLetterEndpoint(e, context));
             cfg.ReceiveEndpoint(QueueNames.EmailBenachrichtigung, e =>
@@ -115,6 +119,8 @@ builder.Services.AddMassTransit(x =>
         var rabbitMqConnectionString = builder.Configuration.GetConnectionString("rabbitmq")
             ?? throw new InvalidOperationException(
                 "Connection String 'rabbitmq' fehlt — bitte Aspire-AppHost oder Konfiguration prüfen.");
+        var scanExecutionOptions = builder.Configuration.GetSection(ScanExecutionOptions.SectionName)
+            .Get<ScanExecutionOptions>() ?? new ScanExecutionOptions();
         x.UsingRabbitMq((context, cfg) =>
         {
             cfg.Host(rabbitMqConnectionString);
@@ -125,7 +131,7 @@ builder.Services.AddMassTransit(x =>
             // Scanner-Ausführung: Blob lesen, Engines laufen lassen, ScanCompleted publizieren.
             // Retry-Policy identisch mit dem DLQ-Pfad (ossp.scan-requested_error, TC-16).
             cfg.ReceiveEndpoint(QueueNames.ScanRequested, e =>
-                AnalysisSagaBusConfiguration.ConfigureScanExecutionEndpoint(e, context, retryOptions));
+                AnalysisSagaBusConfiguration.ConfigureScanExecutionEndpoint(e, context, retryOptions, scanExecutionOptions));
 
             cfg.ReceiveEndpoint(QueueNames.ScanRequestedError, e =>
                 AnalysisSagaBusConfiguration.ConfigureScanDeadLetterEndpoint(e, context));

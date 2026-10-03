@@ -5,6 +5,7 @@ using OfficeSelfSigningPortal.WorkerService.Data;
 using OfficeSelfSigningPortal.WorkerService.Messaging;
 using OfficeSelfSigningPortal.WorkerService.Notifications;
 using OfficeSelfSigningPortal.WorkerService.Saga;
+using OfficeSelfSigningPortal.WorkerService.Scanning;
 using Ossp.Contracts;
 
 namespace OfficeSelfSigningPortal.WorkerService.Messaging;
@@ -76,15 +77,22 @@ public static class AnalysisSagaBusConfiguration
     /// nach dem Limit verschiebt der Broker auf <c>ossp.scan-requested_error</c> (TC-16).
     /// Keine EF-Outbox nötig: Der Consumer hält keinen lokalen Zustand; das
     /// ScanCompleted-Publish ist selbst der fachliche Abschluss (Fehler → Fault → Retry → DLQ).
+    /// ConcurrencyLimit und PrefetchCount (TM-14, SF-03, Ticket 37) begrenzen die
+    /// gleichzeitige Verarbeitung — Backpressure gegen Queue-Überlastung durch Flooding.
     /// </summary>
     public static void ConfigureScanExecutionEndpoint(
         IReceiveEndpointConfigurator endpoint,
         IBusRegistrationContext context,
-        OsspRetryOptions retryOptions)
+        OsspRetryOptions retryOptions,
+        ScanExecutionOptions scanExecutionOptions)
     {
         endpoint.UseMessageRetry(r => r.Intervals(
             OsspBusConventions.JitteredExponentialIntervals(retryOptions.Limit, retryOptions.MinDelay, retryOptions.MaxDelay)));
-        endpoint.ConfigureConsumer<ScanExecutionConsumer>(context);
+        // PrefetchCount = wie viele Nachrichten der Consumer vorausschauend vom Broker
+        // holt; MassTransit verarbeitet dann ConcurrencyLimit davon parallel
+        // (UseConcurrencyLimit setzt die Pipeline-Filter).
+        endpoint.PrefetchCount = scanExecutionOptions.PrefetchCount;
+        endpoint.ConfigureConsumer<ScanExecutionConsumer>(context, cfg => cfg.UseConcurrencyLimit(scanExecutionOptions.MaxConcurrentMessages));
     }
 
     /// <summary>Dead-Letter-Endpoint der Scanner-Error-Queue (TC-16).</summary>

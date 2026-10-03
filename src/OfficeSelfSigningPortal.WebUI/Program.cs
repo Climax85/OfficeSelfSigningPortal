@@ -56,12 +56,12 @@ builder.Services.AddSignalR();
 builder.Services.AddSingleton<StatusWatchTracker>();
 builder.Services.AddHostedService<StatusChangeNotifier>();
 
-// Rate-Limit des Rückfrage-Kanals (TM-02): Fixed-Window pro Nutzer, Partition
-// nach IdP-Identität — die Policy löst pro Request aus der Konfiguration auf.
+// Rate-Limit des Rückfrage-Kanals (TM-02) und des Upload-Kanals (TM-14, SF-03):
+// Fixed-Window pro Nutzer, Partition nach IdP-Identität — die Policy löst pro
+// Request aus der Konfiguration auf.
 builder.Services.AddRateLimiter(rateLimiterOptions =>
 {
-    // Verbindliche Ablehnung im Rückfrage-Kanal: 429 (TM-02) statt des
-    // Framework-Defaults 503 (RejectionStatusCode).
+    // Verbindliche Ablehnung: 429 (TM-02/TM-14) statt des Framework-Defaults 503.
     rateLimiterOptions.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     rateLimiterOptions.AddPolicy(ReviewEndpoints.RueckfrageRateLimitPolicy, context =>
     {
@@ -74,6 +74,24 @@ builder.Services.AddRateLimiter(rateLimiterOptions =>
             {
                 PermitLimit = reviewOptions.RueckfrageRateLimitPermitLimit,
                 Window = TimeSpan.FromSeconds(reviewOptions.RueckfrageRateLimitWindowSeconds),
+                QueueLimit = 0,
+            });
+    });
+    rateLimiterOptions.AddPolicy(SubmissionEndpoints.UploadRateLimitPolicy, context =>
+    {
+        // Anonyme Requests erreichen die Policy nicht (FallbackPolicy 401), aber
+        // für Test-AuthHandler-Fakes und Edge-Cases fallback auf "anonymous".
+        var ingestionOptions = context.RequestServices
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<IngestionOptions>>().Value;
+        var userId = context.User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier) ?? "anonymous";
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            userId,
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = ingestionOptions.UploadRateLimitPermitLimit,
+                Window = TimeSpan.FromSeconds(ingestionOptions.UploadRateLimitWindowSeconds),
+                // Kein Queueing: ein gedrosselter Upload wird sofort abgewiesen,
+                // damit der Einreicher die Ablehnung sieht (kein Client-Timeout).
                 QueueLimit = 0,
             });
     });
