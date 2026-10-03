@@ -1,5 +1,7 @@
 using OfficeSelfSigningPortal.SigningService.Signing;
 using OfficeSelfSigningPortal.TestSupport;
+using OpenMcdf;
+using OpenMcdfVersion = OpenMcdf.Version;
 
 namespace OfficeSelfSigningPortal.Tests.Signing;
 
@@ -16,8 +18,13 @@ public sealed class DirStreamReaderSigningTests
     {
         // Arrange
         var vbaProject = SignCorpus.BuildVbaProject();
-        using var compound = new OpenMcdf.CompoundFile(new MemoryStream(vbaProject, writable: false));
-        var dirCompressed = compound.RootStorage.GetStorage("VBA").GetStream("dir").GetData();
+        using var compound = RootStorage.Open(new MemoryStream(vbaProject, writable: false), StorageModeFlags.None);
+        using var dirStream = compound.TryOpenStorage("VBA", out var vbaStorage)
+            ? vbaStorage!.TryOpenStream("dir", out var ds) ? ds! : throw new InvalidDataException("dir stream missing")
+            : throw new InvalidDataException("VBA storage missing");
+        using var dirMemory = new MemoryStream();
+        dirStream.CopyTo(dirMemory);
+        var dirCompressed = dirMemory.ToArray();
 
         // Act
         var dir = DirStreamReader.Parse(VbaRleDecompressor.Decompress(dirCompressed), fallbackCodePage: 1252);

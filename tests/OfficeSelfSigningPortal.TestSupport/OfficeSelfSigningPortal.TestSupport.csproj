@@ -9,7 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
-    <PackageReference Include="OpenMcdf" Version="2.4.1" />
+    <PackageReference Include="OpenMcdf" Version="3.3.0" />
   </ItemGroup>
 
   <ItemGroup>
