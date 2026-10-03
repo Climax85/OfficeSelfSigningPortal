@@ -45,28 +45,48 @@ public static class VbaContentHasher
     {
         ArgumentNullException.ThrowIfNull(vbaProject);
 
-        using var compound = new CompoundFile(new MemoryStream(vbaProject, writable: false));
-        var vbaStorage = compound.RootStorage.GetStorage("VBA");
-        var dirStream = vbaStorage.GetStream("dir").GetData();
-        var projectStream = compound.RootStorage.GetStream("PROJECT").GetData();
+        // OpenMcdf 3.x: RootStorage.Open statt CompoundFile, TryOpen* mit Out-Parameter statt
+        // Get*/TryGet*; Streams werden als CfbStream geöffnet und über Stream.CopyTo gelesen.
+        using var compound = RootStorage.Open(new MemoryStream(vbaProject, writable: false), StorageModeFlags.None);
+        if (!compound.TryOpenStorage("VBA", out var vbaStorage))
+        {
+            throw new InvalidDataException("VBA-Storage fehlt im vbaProject.bin.");
+        }
 
-        var decompressedDir = VbaRleDecompressor.Decompress(dirStream);
+        var dirBytes = ReadStream(vbaStorage!, "dir");
+        var projectBytes = ReadStream(compound, "PROJECT");
+
+        var decompressedDir = VbaRleDecompressor.Decompress(dirBytes);
         var dir = DirStreamReader.Parse(decompressedDir, fallbackCodePage: 1252);
         var codePage = Encoding.GetEncoding(dir.CodePage);
 
         using var buffer = new MemoryStream();
         var writer = new BinaryWriter(buffer, Encoding.UTF8, leaveOpen: true);
 
-        WriteV3ContentNormalizedData(writer, dir, vbaStorage, codePage);
-        WriteProjectNormalizedData(writer, projectStream, compound.RootStorage, codePage);
+        WriteV3ContentNormalizedData(writer, dir, vbaStorage!, codePage);
+        WriteProjectNormalizedData(writer, projectBytes, compound, codePage);
 
         writer.Flush();
         return System.Security.Cryptography.SHA256.HashData(buffer.ToArray());
     }
 
+    /// <summary>Liest einen CfbStream vollständig in ein Byte-Array (Ersatz für 2.4.1 <c>CFStream.GetData()</c>).</summary>
+    private static byte[] ReadStream(Storage parent, string name)
+    {
+        if (!parent.TryOpenStream(name, out var stream))
+        {
+            throw new InvalidDataException($"Stream '{name}' fehlt im CFB-Container.");
+        }
+
+        using var streamRef = stream!;
+        using var memory = new MemoryStream();
+        streamRef.CopyTo(memory);
+        return memory.ToArray();
+    }
+
     /// <summary>MS-OVBA 2.4.2.5 — V3ContentNormalizedData aus dem dekomprimierten dir-Stream.</summary>
     private static void WriteV3ContentNormalizedData(
-        BinaryWriter buffer, DirStreamData dir, CFStorage vbaStorage, Encoding codePage)
+        BinaryWriter buffer, DirStreamData dir, Storage vbaStorage, Encoding codePage)
     {
         buffer.Write((ushort)0x0001); // PROJECTSYSKIND.Id
         buffer.Write(dir.SysKindSize); // PROJECTSYSKIND.Size
@@ -211,7 +231,7 @@ public static class VbaContentHasher
     }
 
     private static void WriteModule(
-        BinaryWriter buffer, ModuleEntry module, CFStorage vbaStorage, Encoding codePage)
+        BinaryWriter buffer, ModuleEntry module, Storage vbaStorage, Encoding codePage)
     {
         if (module.IsProcedural)
         {
@@ -231,7 +251,7 @@ public static class VbaContentHasher
             buffer.Write(module.PrivateReserved);
         }
 
-        var streamData = vbaStorage.GetStream(module.StreamName).GetData();
+        var streamData = ReadStream(vbaStorage, module.StreamName);
         if (module.TextOffset > streamData.Length)
         {
             throw new InvalidDataException(
@@ -362,7 +382,7 @@ public static class VbaContentHasher
     /// [Workspace] und übrige Sektionen werden ignoriert.
     /// </summary>
     private static void WriteProjectNormalizedData(
-        BinaryWriter buffer, byte[] projectStream, CFStorage rootStorage, Encoding codePage)
+        BinaryWriter buffer, byte[] projectStream, Storage rootStorage, Encoding codePage)
     {
         var projectText = codePage.GetString(projectStream);
         var lines = Regex.Split(projectText, "\r\n");
@@ -439,43 +459,41 @@ public static class VbaContentHasher
     /// (letzter Block zero-padded), verschachtelte Storages rekursiv, Element-Reihenfolge
     /// der CFB-Verzeichnisreihenfolge.
     /// </summary>
-    private static void WriteDesignerStorage(BinaryWriter buffer, string storageName, CFStorage rootStorage)
+    private static void WriteDesignerStorage(BinaryWriter buffer, string storageName, Storage rootStorage)
     {
-        if (!rootStorage.TryGetStorage(storageName, out var designerStorage))
+        if (!rootStorage.TryOpenStorage(storageName, out var designerStorage))
         {
             throw new InvalidDataException(
                 $"Designer-Storage '{storageName}' (BaseClass-Property) fehlt im VBA-Projekt.");
         }
 
-        WriteStorageNormalized(buffer, designerStorage);
+        WriteStorageNormalized(buffer, designerStorage!);
     }
 
-    private static void WriteStorageNormalized(BinaryWriter buffer, CFStorage storage)
+    private static void WriteStorageNormalized(BinaryWriter buffer, Storage storage)
     {
-        storage.VisitEntries(
-            entry =>
+        foreach (var entry in storage.EnumerateEntries())
+        {
+            if (entry.Type == EntryType.Stream)
             {
-                if (entry.IsStream)
+                var data = ReadStream(storage, entry.Name);
+                var offset = 0;
+                while (offset < data.Length)
                 {
-                    var data = ((CFStream)entry).GetData();
-                    var offset = 0;
-                    while (offset < data.Length)
+                    var chunkLength = Math.Min(1023, data.Length - offset);
+                    buffer.Write(data, offset, chunkLength);
+                    for (var i = chunkLength; i < 1023; i++)
                     {
-                        var chunkLength = Math.Min(1023, data.Length - offset);
-                        buffer.Write(data, offset, chunkLength);
-                        for (var i = chunkLength; i < 1023; i++)
-                        {
-                            buffer.Write((byte)0);
-                        }
-
-                        offset += chunkLength;
+                        buffer.Write((byte)0);
                     }
+
+                    offset += chunkLength;
                 }
-                else if (entry.IsStorage)
-                {
-                    WriteStorageNormalized(buffer, (CFStorage)entry);
-                }
-            },
-            recursive: false);
+            }
+            else if (entry.Type == EntryType.Storage)
+            {
+                WriteStorageNormalized(buffer, storage.OpenStorage(entry.Name));
+            }
+        }
     }
 }

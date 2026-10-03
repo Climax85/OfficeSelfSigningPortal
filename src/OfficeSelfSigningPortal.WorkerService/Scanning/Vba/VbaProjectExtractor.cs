@@ -97,20 +97,23 @@ public sealed class VbaProjectExtractor
 
     private static VbaExtraction ExtractFromCompoundFile(byte[] cfbContent)
     {
-        CompoundFile compound;
+        RootStorage compound;
         try
         {
-            compound = new CompoundFile(new MemoryStream(cfbContent, writable: false));
+            // OpenMcdf 3.x: CompoundFile ctor → RootStorage.Open(Stream, StorageModeFlags.None);
+            // 3.x wirft bei nicht-CFB-Bytes u. a. EndOfStreamException (IOException-Subklasse) statt
+            // CFFileFormatException — IOException-Fang bleibt der gemeinsame Pfad.
+            compound = RootStorage.Open(new MemoryStream(cfbContent, writable: false), StorageModeFlags.None);
         }
-        catch (Exception ex) when (ex is CFFileFormatException or IOException or ArgumentException)
+        catch (Exception ex) when (ex is FileFormatException or IOException or ArgumentException)
         {
             return new VbaExtraction(false, 0, [], ParserError: true, EncryptedProject: false);
         }
 
         using (compound)
         {
-            var vbaStorage = ResolveStorage(compound.RootStorage, VbaStoragePath)
-                ?? ResolveStorage(compound.RootStorage, LegacyVbaStoragePath);
+            var vbaStorage = ResolveStorage(compound, VbaStoragePath)
+                ?? ResolveStorage(compound, LegacyVbaStoragePath);
             if (vbaStorage is null)
             {
                 return new VbaExtraction(false, 0, [], ParserError: false, EncryptedProject: false);
@@ -144,9 +147,9 @@ public sealed class VbaProjectExtractor
         }
     }
 
-    private static CFStorage? ResolveStorage(CFStorage root, string[] path)
+    private static Storage? ResolveStorage(Storage root, string[] path)
     {
-        CFStorage? current = root;
+        Storage? current = root;
         foreach (var name in path)
         {
             if (current is null)
@@ -154,45 +157,56 @@ public sealed class VbaProjectExtractor
                 return null;
             }
 
-            current = current.TryGetStorage(name);
+            current = current.TryOpenStorage(name, out var next) ? next : null;
         }
 
         return current;
     }
 
-    private static List<(string Name, byte[] Data)> ListModuleStreams(CFStorage vbaStorage)
+    private static List<(string Name, byte[] Data)> ListModuleStreams(Storage vbaStorage)
     {
         var result = new List<(string, byte[])>();
-        vbaStorage.VisitEntries(item =>
+        // OpenMcdf 3.x: VisitEntries(Action<CFItem>, recursive) → EnumerateEntries() (immer
+        // nicht-rekursiv; bei Bedarf offen storage.OpenStorage(entry.Name) selbst aufrufen).
+        foreach (var entry in vbaStorage.EnumerateEntries())
         {
-            if (!item.IsStream || NonModuleStreams.Contains(item.Name))
+            if (entry.Type != EntryType.Stream || NonModuleStreams.Contains(entry.Name))
             {
-                return;
+                continue;
             }
 
+            // CFItemNotFound (2.4.1: Stream zwischen VisitEntries und GetStream verschwunden)
+            // hat in 3.x kein direktes Äquivalent — FileFormatException (Storage-Konsistenz) ist
+            // der nächstliegende Fehlerpfad.
             try
             {
-                result.Add((item.Name, vbaStorage.GetStream(item.Name).GetData()));
+                using var stream = vbaStorage.OpenStream(entry.Name);
+                using var memory = new MemoryStream();
+                stream.CopyTo(memory);
+                result.Add((entry.Name, memory.ToArray()));
             }
-            catch (CFItemNotFound)
+            catch (FileFormatException)
             {
-                // Stream zwischen VisitEntries und GetData verschwunden — ignorieren.
+                // Stream-Konsistenzfehler zwischen EnumerateEntries und OpenStream — ignorieren.
             }
-        }, recursive: false);
+        }
 
         return result;
     }
 
-    private static bool TryReadDirStream(CFStorage vbaStorage)
+    private static bool TryReadDirStream(Storage vbaStorage)
     {
-        if (vbaStorage.TryGetStream("dir") is not { } dirStream)
+        if (!vbaStorage.TryOpenStream("dir", out var dirStream))
         {
             return false;
         }
 
         try
         {
-            VbaRle.Decompress(dirStream.GetData());
+            using var streamRef = dirStream!;
+            using var memory = new MemoryStream();
+            streamRef.CopyTo(memory);
+            VbaRle.Decompress(memory.ToArray());
             return true;
         }
         catch (InvalidDataException)

@@ -1,5 +1,6 @@
 using System.Text;
 using OpenMcdf;
+using OpenMcdfVersion = OpenMcdf.Version;
 
 namespace OfficeSelfSigningPortal.TestSupport;
 
@@ -94,24 +95,40 @@ public static class ScanCorpus
     /// <summary>Baut das CFB-vbaProject.bin: Root-VBA-Speicher mit dir und Modul-Streams; PROJECT am Root.</summary>
     public static byte[] BuildVbaProject(string[] moduleSources, bool encryptedDir)
     {
-        using var compound = new CompoundFile();
-        var vba = compound.RootStorage.AddStorage("VBA");
-        var dir = vba.AddStream(DirStreamName);
-        dir.SetData(encryptedDir
-            ? new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x42, 0x42, 0x42, 0x42 }
-            : VbaRleCompressor.CompressStoreOnly(MinimalDir));
-
-        for (var i = 0; i < moduleSources.Length; i++)
+        // OpenMcdf 3.x: CompoundFile + RootStorage.AddStorage/AddStream + Save → RootStorage.Create +
+        // CreateStorage/CreateStream + Write + Flush; LeaveOpen lässt den zugrundeliegenden
+        // Stream nach Dispose lesbar (2.4.1 schloss die Save-Stream-Repräsentation erst nach Save()).
+        var output = new MemoryStream();
+        using (var compound = RootStorage.Create(output, OpenMcdfVersion.V3, StorageModeFlags.Transacted | StorageModeFlags.LeaveOpen))
         {
-            var module = vba.AddStream(ModuleName(i));
-            module.SetData(VbaRleCompressor.CompressStoreOnly(Encoding.ASCII.GetBytes(moduleSources[i])));
+            var vba = compound.CreateStorage("VBA");
+            WriteStream(vba, DirStreamName, encryptedDir
+                ? new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x42, 0x42, 0x42, 0x42 }
+                : VbaRleCompressor.CompressStoreOnly(MinimalDir));
+
+            for (var i = 0; i < moduleSources.Length; i++)
+            {
+                WriteStream(vba, ModuleName(i), VbaRleCompressor.CompressStoreOnly(Encoding.ASCII.GetBytes(moduleSources[i])));
+            }
+
+            WriteStream(compound, ProjectStreamName, Encoding.ASCII.GetBytes(BuildProjectText(moduleSources.Length)));
+
+            // Transacted-Modus verlangt expliziten Commit, sonst bleiben die geschriebenen
+            // Sektoren im CFB-Speicher und die Reopen-Leseversuche lesen leere Streams /
+            // scheitern mit EndOfStreamException (im Proto verifiziert).
+            compound.Commit();
         }
 
-        var project = compound.RootStorage.AddStream(ProjectStreamName);
-        project.SetData(Encoding.ASCII.GetBytes(BuildProjectText(moduleSources.Length)));
-        using var output = new MemoryStream();
-        compound.Save(output);
         return output.ToArray();
+
+        // OpenMcdf 3.x CfbStream muss disposed werden, bevor der Root die finalen Sektoren
+        // schreibt — sonst sind die geschriebenen Bytes beim Reopen leer (im Proto verifiziert).
+        static void WriteStream(OpenMcdf.Storage parent, string name, byte[] data)
+        {
+            using var stream = parent.CreateStream(name);
+            stream.Write(data, 0, data.Length);
+            stream.Flush();
+        }
     }
 
     private static string ModuleName(int index) => $"Module{index + 1}";

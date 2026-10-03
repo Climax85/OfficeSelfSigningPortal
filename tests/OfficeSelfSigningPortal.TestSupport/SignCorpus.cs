@@ -1,5 +1,6 @@
 using System.Text;
 using OpenMcdf;
+using OpenMcdfVersion = OpenMcdf.Version;
 
 namespace OfficeSelfSigningPortal.TestSupport;
 
@@ -50,25 +51,35 @@ public static class SignCorpus
     /// </summary>
     public static byte[] BuildVbaProject()
     {
-        using var compound = new CompoundFile();
+        // OpenMcdf 3.x — siehe ScanCorpus.BuildVbaProject für Begründung des Musters
+        // (LeaveOpen + expliziter CfbStream-Dispose, sonst leere Streams beim Reopen).
+        var output = new MemoryStream();
+        using (var compound = RootStorage.Create(output, OpenMcdfVersion.V3, StorageModeFlags.Transacted | StorageModeFlags.LeaveOpen))
+        {
+            var vba = compound.CreateStorage("VBA");
+            WriteStream(vba, "dir", VbaRleCompressor.CompressStoreOnly(BuildDirStream()));
 
-        var vba = compound.RootStorage.AddStorage("VBA");
-        var dir = vba.AddStream("dir");
-        dir.SetData(VbaRleCompressor.CompressStoreOnly(BuildDirStream()));
+            AddModule(vba, "CleanModule", StandardModuleSource, procedural: true);
+            AddModule(vba, "ThisWorkbook", DocumentModuleSource, procedural: false);
 
-        AddModule(vba, "CleanModule", StandardModuleSource, procedural: true);
-        AddModule(vba, "ThisWorkbook", DocumentModuleSource, procedural: false);
+            WriteStream(compound, "PROJECT", Encoding.GetEncoding(CodePage).GetBytes(BuildProjectText()));
 
-        var project = compound.RootStorage.AddStream("PROJECT");
-        project.SetData(Encoding.GetEncoding(CodePage).GetBytes(BuildProjectText()));
+            var designer = compound.CreateStorage("frmTest");
+            WriteStream(designer, "o", new byte[] { 0x10, 0x20, 0x30 });
+            WriteStream(designer, "f", Encoding.ASCII.GetBytes("Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} frmTest\r\nEnd\r\n"));
 
-        var designer = compound.RootStorage.AddStorage("frmTest");
-        designer.AddStream("o").SetData(new byte[] { 0x10, 0x20, 0x30 });
-        designer.AddStream("f").SetData(Encoding.ASCII.GetBytes("Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} frmTest\r\nEnd\r\n"));
+            // Siehe ScanCorpus.BuildVbaProject — Transacted-Modus verlangt expliziten Commit.
+            compound.Commit();
+        }
 
-        using var output = new MemoryStream();
-        compound.Save(output);
         return output.ToArray();
+
+        static void WriteStream(OpenMcdf.Storage parent, string name, byte[] data)
+        {
+            using var stream = parent.CreateStream(name);
+            stream.Write(data, 0, data.Length);
+            stream.Flush();
+        }
     }
 
     /// <summary>Baut eine OOXML-Makro-Datei um das angegebene vbaProject.bin (xl/word/ppt-Layout).</summary>
@@ -89,10 +100,12 @@ public static class SignCorpus
         return package.ToArray();
     }
 
-    private static void AddModule(CFStorage vba, string streamName, string source, bool procedural)
+    private static void AddModule(OpenMcdf.Storage vba, string streamName, string source, bool procedural)
     {
-        var module = vba.AddStream(streamName);
-        module.SetData(VbaRleCompressor.CompressStoreOnly(Encoding.GetEncoding(CodePage).GetBytes(source)));
+        var compressed = VbaRleCompressor.CompressStoreOnly(Encoding.GetEncoding(CodePage).GetBytes(source));
+        using var module = vba.CreateStream(streamName);
+        module.Write(compressed, 0, compressed.Length);
+        module.Flush();
     }
 
     private static string BuildProjectText()

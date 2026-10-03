@@ -18,7 +18,7 @@
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.5.7" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
-    <PackageReference Include="OpenMcdf" Version="2.4.1" />
+    <PackageReference Include="OpenMcdf" Version="3.3.0" />
     <PackageReference Include="Polly.Core" Version="8.6.4" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.12" />
   </ItemGroup>
