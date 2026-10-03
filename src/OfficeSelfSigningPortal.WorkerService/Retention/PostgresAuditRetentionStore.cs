@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Logging;
 using Npgsql;
 using Ossp.Audit;
 
@@ -12,11 +11,12 @@ namespace OfficeSelfSigningPortal.WorkerService.Retention;
 /// Transaktion, damit die <see cref="AuditChainCheckpoint"/>-Schreibung
 /// denselben Snapshot-Zustand dokumentiert. Parametrisiertes Raw SQL mit
 /// Array-Parameter <c>ANY(@ids)</c> analog zu
-/// <see cref="PostgresRetentionBlobStore"/> (CONVENTIONS §6).
+/// <see cref="PostgresRetentionBlobStore"/> (CONVENTIONS §6). Logging
+/// bewusst nicht injiziert: der Executor kapselt den fachlichen
+/// Lauf-Kontext (Stichtag, gelöschte Anzahl, Checkpoint); Doppel-Logging
+/// wäre redundant.
 /// </summary>
-public sealed class PostgresAuditRetentionStore(
-    AuditDbContext auditDb,
-    ILogger<PostgresAuditRetentionStore> logger) : IAuditRetentionStore
+public sealed class PostgresAuditRetentionStore(AuditDbContext auditDb) : IAuditRetentionStore
 {
     private const string DeleteCommand = """
         DELETE FROM audit_trail
