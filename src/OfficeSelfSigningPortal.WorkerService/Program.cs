@@ -74,11 +74,15 @@ builder.Services.AddSingleton<IArtifactBlobStore>(_ => new PostgresArtifactBlobS
 
 // Retention-Job (Ticket 11, REQ-19): löscht Original- und Signatur-Blobs nach der
 // konfigurierbaren Frist (Default 90 Tage) ab Signierung; Audit-Bestand bleibt
-// append-only bestehen. Der Blob-Löschpfad ist bewusst auf diesen Job beschränkt.
+// bis zur Audit-Retention-Obergrenze (Default 1 Jahr, Ticket 38) append-only
+// bestehen. Beide Löschpfade laufen im selben Executor-Lauf; sanctioned
+// Audit-Lösch-Grenzen werden in der `audit_chain_checkpoints`-Tabelle
+// festgehalten.
 builder.Services.AddOptions<RetentionOptions>().BindConfiguration(RetentionOptions.SectionName);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<RetentionExecutor>();
 builder.Services.AddSingleton<IRetentionBlobStore>(_ => new PostgresRetentionBlobStore(portalConnectionString));
+builder.Services.AddScoped<IAuditRetentionStore, PostgresAuditRetentionStore>();
 builder.Services.AddHostedService<RetentionJob>();
 
 // Transportwahl: Produktion/Aspire = RabbitMQ; Test-Suites setzen OsspBus:Transport=InMemory.

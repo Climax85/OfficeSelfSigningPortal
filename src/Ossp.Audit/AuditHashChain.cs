@@ -56,12 +56,15 @@ public static class AuditHashChain
 
     /// <summary>
     /// Prüft die (nach Id sortierten) Einträge eines Vorgangs. Der erste Eintrag muss
-    /// entweder Genesis-Vorgänger haben oder auf einen Hash verweisen, der mit
-    /// <paramref name="firstPrevHashExistsInTable"/> als in der Tabelle vorhanden bestätigt wird.
+    /// entweder Genesis-Vorgänger haben, auf einen Hash verweisen, der mit
+    /// <paramref name="firstPrevHashExistsInTable"/> als in der Tabelle vorhanden bestätigt wird,
+    /// oder eine sanctioned Lösch-Grenze der Audit-Retention sein
+    /// (<paramref name="firstPrevHashIsKnownDeletionBoundary"/>, REQ-19, Ticket 38).
     /// </summary>
     public static AuditChainVerificationResult Verify(
         IReadOnlyList<AuditEntry> jobEntries,
-        bool firstPrevHashExistsInTable)
+        bool firstPrevHashExistsInTable,
+        bool firstPrevHashIsKnownDeletionBoundary = false)
     {
         if (jobEntries.Count == 0)
         {
@@ -69,7 +72,9 @@ public static class AuditHashChain
         }
 
         var erster = jobEntries[0];
-        if (!GenesisPrevHash.Equals(erster.PrevHash, StringComparison.Ordinal) && !firstPrevHashExistsInTable)
+        if (!GenesisPrevHash.Equals(erster.PrevHash, StringComparison.Ordinal)
+            && !firstPrevHashExistsInTable
+            && !firstPrevHashIsKnownDeletionBoundary)
         {
             return new AuditChainVerificationResult(
                 Valid: false,
