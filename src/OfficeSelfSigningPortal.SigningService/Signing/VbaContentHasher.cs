@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using OpenMcdf;
+using Ossp.Vba;
 
 namespace OfficeSelfSigningPortal.SigningService.Signing;
 
@@ -56,7 +57,7 @@ public static class VbaContentHasher
         var dirBytes = ReadStream(vbaStorage!, "dir");
         var projectBytes = ReadStream(compound, "PROJECT");
 
-        var decompressedDir = VbaRleDecompressor.Decompress(dirBytes);
+        var decompressedDir = VbaRle.Decompress(dirBytes);
         var dir = DirStreamReader.Parse(decompressedDir, fallbackCodePage: 1252);
         var codePage = Encoding.GetEncoding(dir.CodePage);
 
@@ -259,7 +260,7 @@ public static class VbaContentHasher
         }
 
         var compressed = new ReadOnlySpan<byte>(streamData, (int)module.TextOffset, streamData.Length - (int)module.TextOffset);
-        var text = VbaRleDecompressor.Decompress(compressed);
+        var text = VbaRle.Decompress(compressed);
 
         var hashModuleNameFlag = false;
         foreach (var line in SplitLines(text))

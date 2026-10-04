@@ -52,19 +52,26 @@ public sealed class ConjurKeyProviderOptions
 /// exponentieller Retry mit Jitter + Circuit Breaker — ein Vault-Ausfall schlägt schnell
 /// und kontrolliert fehl, die MassTransit-Redelivery der Sign-Queue puffert die Aufträge,
 /// nach Retry-Limit landen sie in der Fault-Queue (kein Request-Verlust).
+///
+/// HttpClient wird pro Aufruf aus <see cref="IHttpClientFactory"/> bezogen (F6/S6): keine
+/// manuell konstruierten HttpClient-Instanzen mehr im DI-Pfad, DNS-Refresh und Handler-
+/// Rotation folgen dem Framework.
 /// </summary>
 public sealed class CyberArkConjurKeyProvider : ICodeSigningKeyProvider, IDisposable
 {
-    private readonly HttpClient _httpClient;
+    /// <summary>Name des registrierten HttpClient-Namensclients (siehe <c>KeyProviderServiceCollectionExtensions</c>).</summary>
+    public const string HttpClientName = "CyberArkConjurKeyProvider";
+
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ConjurKeyProviderOptions _options;
     private readonly ResiliencePipeline _pipeline;
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
     private string? _cachedToken;
     private DateTimeOffset _tokenValidUntil = DateTimeOffset.MinValue;
 
-    public CyberArkConjurKeyProvider(HttpClient httpClient, ConjurKeyProviderOptions options)
+    public CyberArkConjurKeyProvider(IHttpClientFactory httpClientFactory, ConjurKeyProviderOptions options)
     {
-        _httpClient = httpClient;
+        _httpClientFactory = httpClientFactory;
         _options = options;
 
         var retryDelays = Ossp.Contracts.OsspBusConventions.JitteredExponentialIntervals(
@@ -128,12 +135,15 @@ public sealed class CyberArkConjurKeyProvider : ICodeSigningKeyProvider, IDispos
     private async Task<byte[]> ReadSecretAsync(string path, CancellationToken ct)
     {
         var token = await GetTokenAsync(ct);
+        // Pro Aufruf frisch aus der Factory — DNS-Refresh, Handler-Rotation und
+        // HttpClient-Lebenszyklus werden vom Framework verwaltet (F6/S6).
+        using var httpClient = _httpClientFactory.CreateClient(HttpClientName);
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"{_options.BaseUrl.TrimEnd('/')}/secrets/{_options.Account}/variable/{path}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Token", $"token=\"{token}\"");
 
-        using var response = await _httpClient.SendAsync(request, ct);
+        using var response = await httpClient.SendAsync(request, ct);
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Forbidden)
         {
             throw new ConjurVaultException(
@@ -159,12 +169,14 @@ public sealed class CyberArkConjurKeyProvider : ICodeSigningKeyProvider, IDispos
                 return _cachedToken;
             }
 
+            // Token-Pfad ebenfalls über die Factory (F6/S6).
+            using var httpClient = _httpClientFactory.CreateClient(HttpClientName);
             using var request = new HttpRequestMessage(
                 HttpMethod.Post,
                 $"{_options.BaseUrl.TrimEnd('/')}/authn/{_options.Account}/{_options.Login}/authenticate");
             request.Content = new StringContent(_options.ApiKey, Encoding.UTF8, "text/plain");
 
-            using var response = await _httpClient.SendAsync(request, ct);
+            using var response = await httpClient.SendAsync(request, ct);
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
             {
                 throw new ConjurVaultException(

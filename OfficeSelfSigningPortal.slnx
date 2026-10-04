@@ -5,6 +5,7 @@
     <Project Path="src/Ossp.Audit/Ossp.Audit.csproj" />
     <Project Path="src/Ossp.Contracts/Ossp.Contracts.csproj" />
     <Project Path="src/OfficeSelfSigningPortal.WorkerService/OfficeSelfSigningPortal.WorkerService.csproj" />
+    <Project Path="src/Ossp.Vba/Ossp.Vba.csproj" />
     <Project Path="src/Ossp.AmsiScanBridge/Ossp.AmsiScanBridge.csproj" />
   </Folder>
   <Folder Name="/src/OfficeSelfSigningPortal.AppHost/">

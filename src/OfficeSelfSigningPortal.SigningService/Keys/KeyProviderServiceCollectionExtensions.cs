@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http;
 using Ossp.Contracts;
 
 namespace OfficeSelfSigningPortal.SigningService.Keys;
@@ -19,6 +20,9 @@ public sealed class KeyProviderOptions
 /// Registrierung der Key-Provider mit Start-Zwangspüfung (AK-54, TC-35, TM-20):
 /// Der LocalDevKeyProvider ist außerhalb des Dev-Profils (<c>Deployment:Profile=dev</c>)
 /// unzulässig — der Start wird mit eindeutiger Fehlermeldung verweigert (fail-fast).
+/// HttpClient-Verdrahtung im CyberArk-Pfad läuft über <see cref="IHttpClientFactory"/>
+/// (F6/S6): keine manuellen <c>new HttpClient(new SocketsHttpHandler())</c>-Instanzen
+/// im Registrierungspfad mehr (DNS-Refresh, Handler-Rotation).
 /// </summary>
 public static class KeyProviderServiceCollectionExtensions
 {
@@ -46,6 +50,10 @@ public static class KeyProviderServiceCollectionExtensions
                 break;
 
             case "CyberArkConjur":
+                // Named-Client registrieren — Konfiguration am Builder (Handler-Pool /
+                // Default-Timeouts), der Provider nutzt IHttpClientFactory.CreateClient
+                // pro Aufruf (F6/S6).
+                services.AddHttpClient(CyberArkConjurKeyProvider.HttpClientName);
                 services.AddSingleton<ICodeSigningKeyProvider>(provider =>
                 {
                     var conjurOptions = configuration
@@ -54,8 +62,8 @@ public static class KeyProviderServiceCollectionExtensions
                         ?? throw new InvalidOperationException(
                             $"Abschnitt '{ConjurKeyProviderOptions.SectionName}' fehlt — " +
                             "CyberArk-Conjur-Verbindung muss konfiguriert sein (AK-55, REQ-15).");
-                    var handler = new SocketsHttpHandler();
-                    return new CyberArkConjurKeyProvider(new HttpClient(handler), conjurOptions);
+                    var factory = provider.GetRequiredService<IHttpClientFactory>();
+                    return new CyberArkConjurKeyProvider(factory, conjurOptions);
                 });
                 break;
 

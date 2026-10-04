@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
+using Ossp.Vba;
 
 namespace OfficeSelfSigningPortal.Tests.Support;
 
@@ -119,13 +120,11 @@ public static class IngestionFiles
     public static byte[] CreatePolyglotFile()
     {
         var zipBytes = CreateValidMacroFile("xlsm");
-        var polyglot = new byte[CfbMagic.Length + zipBytes.Length];
-        CfbMagic.CopyTo(polyglot, 0);
-        zipBytes.CopyTo(polyglot, CfbMagic.Length);
+        var polyglot = new byte[VbaRle.CfbMagic.Length + zipBytes.Length];
+        VbaRle.CfbMagic.CopyTo(polyglot, 0);
+        zipBytes.CopyTo(polyglot, VbaRle.CfbMagic.Length);
         return polyglot;
     }
-
-    private static readonly byte[] CfbMagic = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 
     /// <summary>Zip-Bomb-Muster: deklariert <paramref name="declaredUncompressedBytes"/> entpackte Bytes,
     /// übertragen werden nur wenige komprimierte Bytes (Null-Block, extremes Verhältnis).</summary>
@@ -155,7 +154,7 @@ public static class IngestionFiles
         if (cfbHeaderOnly)
         {
             var cfb = new byte[4096];
-            CfbMagic.CopyTo(cfb, 0);
+            VbaRle.CfbMagic.CopyTo(cfb, 0);
             return cfb;
         }
 

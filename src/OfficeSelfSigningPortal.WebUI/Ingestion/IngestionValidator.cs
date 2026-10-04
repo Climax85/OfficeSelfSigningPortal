@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using Ossp.Vba;
 
 namespace OfficeSelfSigningPortal.WebUI.Ingestion;
 
@@ -12,8 +13,6 @@ using static IngestionVerdict;
 /// </summary>
 public static class IngestionValidator
 {
-    private static readonly byte[] CfbMagic = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
-
     private static readonly Dictionary<string, (string RootPart, string VbaProject)> PackageLayout = new(StringComparer.Ordinal)
     {
         ["xlsm"] = ("xl/workbook.xml", "xl/vbaProject.bin"),
@@ -44,7 +43,7 @@ public static class IngestionValidator
 
         // 3./4. Polyglot (TC-08) bzw. Korruption (TC-05): CFB-Header mit lesbarem
         // ZIP-Layer ist ein OLE/ZIP-Polyglot und wird vor der Scanner-Übergabe abgelehnt.
-        var hasCfbHeader = content.AsSpan(0, Math.Min(content.Length, CfbMagic.Length)).SequenceEqual(CfbMagic);
+        var hasCfbHeader = content.AsSpan(0, Math.Min(content.Length, VbaRle.CfbMagic.Length)).SequenceEqual(VbaRle.CfbMagic);
         var archive = TryOpenZip(content);
 
         if (hasCfbHeader)
