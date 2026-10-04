@@ -13,13 +13,14 @@ using Xunit;
 namespace OfficeSelfSigningPortal.Tests.Retention;
 
 /// <summary>
-/// Seam S5 (Persistenz) für den Retention-Job (Ticket 11, REQ-19, TC-38):
-/// PostgreSQL-Testcontainer mit 'portal'-Datenbank (Artefakte + Audit-Trail) und
-/// eigener 'worker'-Datenbank (Saga-State). Die Uhr ist fälschbar
-/// (<see cref="MutableTimeProvider"/>), damit die 90-Tage-Frist deterministisch
-/// geprüft werden kann. Geteilt über alle Retention-Tests einer Collection.
+/// Seam S5 (Persistenz) für die Audit-Retention Obergrenze 1 Jahr
+/// (Ticket 38, REQ-19, F4). Eigener PostgreSQL-Testcontainer und eigene
+/// Collection, weil die Audit-Retention am kontinuierlichen Tabellenanfang
+/// löscht — ein geteilter Container mit den Blob-Retention-Tests würde
+/// wegen der unvorhersehbaren Id-Vergabe zwingend zu false negatives
+/// führen. Die Uhr ist fälschbar (<see cref="MutableTimeProvider"/>).
 /// </summary>
-public sealed class RetentionS5Fixture : IAsyncLifetime
+public sealed class AuditRetentionS5Fixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = TestContainers.CreatePostgres();
     private readonly MutableTimeProvider _time = new();
@@ -38,9 +39,6 @@ public sealed class RetentionS5Fixture : IAsyncLifetime
     {
         await _postgres.StartAsync();
 
-        // Zwei Datenbanken auf einem Server, damit alle DbContexts sauber migrieren
-        // (je eigener __EFMigrationsHistory; Audit-Trail und Artefakte leben in der
-        // portal-DB, die Saga-Zeile in der worker-DB — wie im Betrieb).
         await _postgres.ExecScriptAsync("CREATE DATABASE worker;");
 
         PortalConnectionString = _postgres.GetConnectionString();
@@ -123,8 +121,6 @@ public sealed class RetentionS5Fixture : IAsyncLifetime
         await using var scope = CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
 
-        // Mikrosekunden stutzen wie der AuditTrailWriter, damit OccurredAt exakt der
-        // Hash-Grundlage entspricht.
         var gestutzt = new DateTimeOffset(occurredAt.Ticks / 10 * 10, TimeSpan.Zero);
         var eintrag = new AuditEntry
         {
@@ -145,18 +141,8 @@ public sealed class RetentionS5Fixture : IAsyncLifetime
     }
 }
 
-/// <summary>Fälschbare Uhr für die Retention-Frist (Default: fester Zeitpunkt).</summary>
-public sealed class MutableTimeProvider : TimeProvider
+[CollectionDefinition(AuditRetentionS5Collection.CollectionName)]
+public sealed class AuditRetentionS5Collection : ICollectionFixture<AuditRetentionS5Fixture>
 {
-    private DateTimeOffset _utcNow = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
-
-    public override DateTimeOffset GetUtcNow() => _utcNow;
-
-    public void SetUtcNow(DateTimeOffset value) => _utcNow = value;
-}
-
-[CollectionDefinition(RetentionS5Collection.CollectionName)]
-public sealed class RetentionS5Collection : ICollectionFixture<RetentionS5Fixture>
-{
-    public const string CollectionName = "Retention S5";
+    public const string CollectionName = "Audit Retention S5";
 }

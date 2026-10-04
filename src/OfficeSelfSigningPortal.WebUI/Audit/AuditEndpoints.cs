@@ -27,6 +27,12 @@ public sealed record AuditEventResponse(
 /// der SHA-256-Hash-Ketten-Prüfung. Nur Administratoren (zentral deklarierte Policy,
 /// CONVENTIONS §6). Eine ungültige Kette wird als solche gemeldet (ChainValid=false)
 /// — der Abbruch des Abrufs würde die Manipulation vor dem Admin verbergen.
+///
+/// Die Hash-Ketten-Prüfung akzeptiert zusätzlich sanctioned Lösch-Grenzen der
+/// Audit-Retention (Ticket 38, REQ-19): der Vorgänger-Hash des ersten
+/// Tabellen-Eintrags darf auf einen <c>audit_chain_checkpoints</c>-Eintrag
+/// verweisen, der den Hash des letzten gelöschten Eintrags festhält. In dem
+/// Fall wird die Kette weiterhin als gültig gemeldet (kein Manipulationsverdacht).
 /// </summary>
 public static class AuditEndpoints
 {
@@ -51,8 +57,12 @@ public static class AuditEndpoints
         var ersterVorgaengerExistent = erster is null
             || AuditHashChain.GenesisPrevHash.Equals(erster.PrevHash, StringComparison.Ordinal)
             || await db.AuditEntries.AsNoTracking().AnyAsync(e => e.EntryHash == erster!.PrevHash, cancellationToken);
+        var ersterVorgaengerIstRetentionGrenze = !ersterVorgaengerExistent
+            && erster is not null
+            && await db.ChainCheckpoints.AsNoTracking()
+                .AnyAsync(c => c.LastDeletedEntryHash == erster.PrevHash, cancellationToken);
 
-        var pruefung = AuditHashChain.Verify(eintraege, ersterVorgaengerExistent);
+        var pruefung = AuditHashChain.Verify(eintraege, ersterVorgaengerExistent, ersterVorgaengerIstRetentionGrenze);
 
         return Results.Ok(new AuditTrailResponse(
             jobId,
