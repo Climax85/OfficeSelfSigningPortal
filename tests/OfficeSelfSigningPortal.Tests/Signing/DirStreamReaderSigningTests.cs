@@ -1,6 +1,7 @@
 using OfficeSelfSigningPortal.SigningService.Signing;
 using OfficeSelfSigningPortal.TestSupport;
 using OpenMcdf;
+using Ossp.Vba;
 using OpenMcdfVersion = OpenMcdf.Version;
 
 namespace OfficeSelfSigningPortal.Tests.Signing;
@@ -27,7 +28,7 @@ public sealed class DirStreamReaderSigningTests
         var dirCompressed = dirMemory.ToArray();
 
         // Act
-        var dir = DirStreamReader.Parse(VbaRleDecompressor.Decompress(dirCompressed), fallbackCodePage: 1252);
+        var dir = DirStreamReader.Parse(VbaRle.Decompress(dirCompressed), fallbackCodePage: 1252);
 
         // Assert: Projekt-Information
         Assert.Equal(1252, dir.CodePage);

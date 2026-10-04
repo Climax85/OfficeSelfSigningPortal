@@ -1,23 +1,30 @@
-namespace OfficeSelfSigningPortal.SigningService.Signing;
+namespace Ossp.Vba;
 
 /// <summary>
-/// Dekompression komprimierter VBA-Container nach MS-OVBA 2.4.1
-/// (CompressedContainer: 0x01-Signatur, dann Chunk-Folge mit 2-Byte-Headern).
-/// Eigene Implementierung im Signing-Kontext: Der SigningService darf keinen
-/// Projekt-Referenz auf den WorkerService (Scanning-Domäne) aufbauen; der
-/// Algorithmus ist spec-fix und spiegelt den reviewten Produktions-Dekompressor
-/// des WorkerService (VbaRle) — beide Seiten sind gegen Spec-Vektoren getestet.
+/// Gemeinsamer MS-OVBA-2.4.1-Helfer (F6/S1): einzige RLE-Dekompressions-Implementierung
+/// für komprimierte VBA-Container, geteilt zwischen WorkerService (Scan-Pfad:
+/// <c>VbaProjectExtractor</c>) und SigningService (Signing-Pfad: <c>VbaContentHasher</c>).
+/// Deterministisch unit-getestet inkl. eines handkonstruierten Copy-Token-Vektors und
+/// Korrupt-Fällen.
 /// </summary>
-public static class VbaRleDecompressor
+public static class VbaRle
 {
     public const byte ContainerSignature = 0x01;
+
+    /// <summary>
+    /// MS-CFB-Magic-Bytes (F6/S2): zentrale Quelle der OLE2-Compound-File-Signatur
+    /// <c>D0 CF 11 E0 A1 B1 1A E1</c>. Geteilt zwischen WebUI (Polyglot-Erkennung) und
+    /// WorkerService (OOXML-/CFB-VBA-Extraktion).
+    /// </summary>
+    public static byte[] CfbMagic => [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 
     private const int RawChunkDecompressedSize = 4096;
     private const int ChunkHeaderSignature = 0x3000; // Bits 12–14: 0b011
 
     /// <summary>
     /// Dekomprimiert einen CompressedContainer. Wirft <see cref="InvalidDataException"/>
-    /// bei Signatur- oder Chunk-Verletzungen (Anhang C: Normalisierung bricht ab).
+    /// bei Signatur- oder Chunk-Verletzungen — der Aufrufer mappt das je nach Pfad auf
+    /// EncryptedProject/ParserError (AK-45) oder bricht die Normalisierung ab (Anhang C).
     /// </summary>
     public static byte[] Decompress(ReadOnlySpan<byte> container)
     {

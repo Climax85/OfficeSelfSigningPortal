@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OfficeSelfSigningPortal.WorkerService\OfficeSelfSigningPortal.WorkerService.csproj" />
+    <ProjectReference Include="..\..\src\Ossp.Vba\Ossp.Vba.csproj" />
   </ItemGroup>
 
 </Project>

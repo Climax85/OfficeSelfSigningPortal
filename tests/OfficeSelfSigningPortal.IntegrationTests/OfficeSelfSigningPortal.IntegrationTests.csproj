@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OfficeSelfSigningPortal.TestSupport\OfficeSelfSigningPortal.TestSupport.csproj" />
+    <ProjectReference Include="..\..\src\OfficeSelfSigningPortal.WorkerService\OfficeSelfSigningPortal.WorkerService.csproj" />
   </ItemGroup>
 
   <!-- yara-x-Native-Binary in den Output kopieren (Probing-Pfad, siehe Zieldatei). -->

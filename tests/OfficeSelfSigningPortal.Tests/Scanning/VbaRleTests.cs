@@ -1,5 +1,5 @@
 using OfficeSelfSigningPortal.TestSupport;
-using OfficeSelfSigningPortal.WorkerService.Scanning.Vba;
+using Ossp.Vba;
 
 namespace OfficeSelfSigningPortal.Tests.Scanning;
 

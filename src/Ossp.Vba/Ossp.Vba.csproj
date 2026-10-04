@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Reine Spec-Helfer (MS-OVBA 2.4.1 / MS-CFB): keine Service-/DI-Abhängigkeiten,
+         wird von WorkerService (Scanning) und SigningService (Signing) gleichermaßen
+         referenziert — siehe F6/S1/S2. -->
+  </PropertyGroup>
+
+</Project>

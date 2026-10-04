@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using OpenMcdf;
+using Ossp.Vba;
 
 namespace OfficeSelfSigningPortal.WorkerService.Scanning.Vba;
 
@@ -31,8 +32,6 @@ public sealed record VbaExtraction(
 /// </summary>
 public sealed class VbaProjectExtractor
 {
-    private static readonly byte[] CfbMagic = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
-
     private static readonly string[] VbaStoragePath = ["VBA"];
     private static readonly string[] LegacyVbaStoragePath = ["Macros", "VBA"];
 
@@ -46,7 +45,7 @@ public sealed class VbaProjectExtractor
         ArgumentNullException.ThrowIfNull(fileContent);
 
         byte[]? cfbContent;
-        if (fileContent.AsSpan().StartsWith(CfbMagic))
+        if (fileContent.AsSpan().StartsWith(VbaRle.CfbMagic))
         {
             cfbContent = fileContent;
         }

@@ -3,6 +3,7 @@ using System.Security.Cryptography.X509Certificates;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OfficeSelfSigningPortal.SigningService.Keys;
+using Ossp.Contracts;
 using Polly.CircuitBreaker;
 
 namespace OfficeSelfSigningPortal.Tests.Signing;
@@ -144,9 +145,77 @@ public sealed class KeyProviderTests
         Assert.Equal(2, http.RequestCount);
     }
 
+    [Fact]
+    public void AddCodeSigningKeyProvider_CyberArkConjur_registriert_KeyProvider_ueber_IHttpClientFactory()
+    {
+        // Arrange: CyberArk-Conjur-Provider mit minimaler Konfiguration — die HttpClient-
+        // Verdrahtung muss DI-seitig über IHttpClientFactory laufen (S6, Code-Review S6).
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Deployment:Profile"] = "baseline",
+                ["Signing:KeyProvider:Provider"] = "CyberArkConjur",
+                ["Signing:Conjur:BaseUrl"] = "https://conjur.example.test",
+                ["Signing:Conjur:Account"] = "ossp",
+                ["Signing:Conjur:Login"] = "signing-service",
+                ["Signing:Conjur:ApiKey"] = "fake-api-key",
+                ["Signing:Conjur:CertificateSecretPath"] = "ossp/cert",
+                ["Signing:Conjur:CertificatePasswordSecretPath"] = "ossp/cert-password",
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddCodeSigningKeyProvider(configuration);
+
+        // Act: BuildServiceProvider materialisiert die Factory und den Provider.
+        var provider = services.BuildServiceProvider();
+
+        // Assert: IHttpClientFactory ist im DI-Container aufgelöst (Factory wurde verdrahtet)
+        // und der registrierte Provider ist der Conjur-Typ — kein manuelles `new HttpClient`
+        // im Registrierungspfad mehr (S6).
+        Assert.NotNull(provider.GetService<System.Net.Http.IHttpClientFactory>());
+        Assert.IsType<CyberArkConjurKeyProvider>(provider.GetRequiredService<ICodeSigningKeyProvider>());
+    }
+
+    [Fact]
+    public async Task ConjurKeyProvider_holt_HttpClient_aus_IHttpClientFactory_pro_Request()
+    {
+        // Arrange: Tracking-Factory zählt jeden CreateClient-Aufruf und liefert einen
+        // HttpClient mit dem registrierten FakeConjurHandler (S6: pro Request frisch).
+        using var http = new FakeConjurHandler((method, url) =>
+            url.Contains("/authn/", StringComparison.Ordinal)
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[] { 1, 2, 3, 4 }) }
+                : url.EndsWith("/variable/ossp/cert", StringComparison.Ordinal)
+                    ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF }) }
+                    : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("s3cret") });
+        var factory = new TrackingHttpClientFactory(http);
+        using var provider = new CyberArkConjurKeyProvider(factory, new ConjurKeyProviderOptions
+        {
+            BaseUrl = "https://conjur.example.test",
+            Account = "ossp",
+            Login = "signing-service",
+            ApiKey = "fake-api-key",
+            CertificateSecretPath = "ossp/cert",
+            CertificatePasswordSecretPath = "ossp/cert-password",
+            MaxRetryAttempts = 1,
+            RetryMinDelay = TimeSpan.FromMilliseconds(1),
+            RetryMaxDelay = TimeSpan.FromMilliseconds(2),
+        });
+
+        // Act
+        _ = await Assert.ThrowsAnyAsync<Exception>(
+            () => provider.GetSigningCertificateAsync(CancellationToken.None));
+
+        // Assert: Factory wurde für die Requests konsultiert (mind. Authn + 2× Secret = 3+).
+        Assert.True(factory.CreateClientCallCount >= 3,
+            $"Erwartet >=3 CreateClient-Aufrufe, war {factory.CreateClientCallCount}.");
+        // Assert: jeder erzeugte HttpClient wurde aus der Factory bezogen — wir verlassen
+        // uns auf die TrackingFactory-Buchhaltung (verifiziert Handler-Übergabe ohne Reflection).
+        Assert.NotEmpty(factory.CreatedClients);
+    }
+
     private static CyberArkConjurKeyProvider CreateProvider(
         FakeConjurHandler handler, int retryAttempts = 3, int minDelayMs = 1, int maxDelayMs = 5, int breakerThroughput = 3)
-        => new(new HttpClient(handler), new ConjurKeyProviderOptions
+        => new(new TrackingHttpClientFactory(handler), new ConjurKeyProviderOptions
         {
             BaseUrl = "https://conjur.example.test",
             Account = "ossp",
@@ -173,6 +242,30 @@ public sealed class KeyProviderTests
         {
             RequestCount++;
             return Task.FromResult(_responder(request.Method, request.RequestUri?.ToString() ?? string.Empty));
+        }
+    }
+
+    /// <summary>
+    /// Aufzeichnender IHttpClientFactory-Stub für den S6-Test: zählt <c>CreateClient</c>-Aufrufe
+    /// und liefert für jeden Namen einen frischen HttpClient, der denselben Handler teilt
+    /// (Handler-Rotation durch das Produktiv-Framework simuliert).
+    /// </summary>
+    private sealed class TrackingHttpClientFactory : System.Net.Http.IHttpClientFactory
+    {
+        private readonly HttpMessageHandler _handler;
+
+        public TrackingHttpClientFactory(HttpMessageHandler handler) => _handler = handler;
+
+        public int CreateClientCallCount { get; private set; }
+
+        public List<HttpClient> CreatedClients { get; } = new();
+
+        public HttpClient CreateClient(string name)
+        {
+            CreateClientCallCount++;
+            var client = new HttpClient(_handler, disposeHandler: false);
+            CreatedClients.Add(client);
+            return client;
         }
     }
 }

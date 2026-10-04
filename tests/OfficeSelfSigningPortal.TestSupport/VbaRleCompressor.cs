@@ -1,4 +1,4 @@
-using OfficeSelfSigningPortal.WorkerService.Scanning.Vba;
+using Ossp.Vba;
 
 namespace OfficeSelfSigningPortal.TestSupport;
 
