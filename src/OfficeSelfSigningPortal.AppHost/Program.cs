@@ -116,14 +116,35 @@ var workerService = builder.AddProject<Projects.OfficeSelfSigningPortal_WorkerSe
 if (deploymentProfile == "hardened")
 {
     // Anhang E/AK-57: Profil hardened aktiviert die AMSI-Bridge-Stage (REQ-12,
-    // ADR-0004). Die Bridge läuft auf einem Windows-Host außerhalb Aspire; ihre URL
-    // ist betriebsseitig zu liefern (Parameter amsi-bridge-url — ohne Angabe verweigert
-    // der AppHost-Start, fail-fast). Ausfall/Timeout der Bridge führt zur Policy zu
-    // Inconclusive + Review-Pflicht (TM-15/AK-26) — niemals Auto-Signing.
+    // ADR-0004). Die Brücke ist ein eigenes Projekt (Ossp.AmsiScanBridge) und
+    // wird im Dev-Profil vom AppHost gestartet; im Produktionsbetrieb läuft
+    // sie auf einem dedizierten Windows-Host außerhalb Aspire (F5, ADR-0004).
+    //
+    // Beide Konfigurationspunkte sind als Aspire-Parameter umgesetzt — der
+    // AppHost verweigert ohne Angabe den Start (fail-fast, CONVENTIONS §5):
+    //   amsi-bridge-url   — Bridge-URL, die der WorkerService als HTTP-Endpoint nutzt
+    //   amsi-bridge-token — Shared-Secret für die X-Amsi-Bridge-Token-Authentisierung
+    //
+    // Das Token wird sowohl in die Brücke als auch in den WorkerService
+    // eingespielt (symmetrisches Shared-Secret, SF-04-Backlog F5). Ausfall/
+    // Timeout der Bridge führt in der Policy zu Inconclusive + Review-Pflicht
+    // (TM-15/AK-26) — niemals Auto-Signing.
     var amsiBridgeUrl = builder.AddParameter("amsi-bridge-url");
+    var amsiBridgeToken = builder.AddParameter("amsi-bridge-token", secret: true);
+    var amsiBridge = builder.AddProject<Projects.Ossp_AmsiScanBridge>("amsiscanbridge")
+        .WithEnvironment("AmsiScanBridge__Token", amsiBridgeToken)
+        .WithEnvironment("AmsiScanBridge__ListenUrl", "http://127.0.0.1:5101");
+
     workerService = workerService
         .WithEnvironment("Scanning__Engines__AmsiEnabled", "true")
-        .WithEnvironment("Scanning__Engines__AmsiBridgeUrl", amsiBridgeUrl);
+        .WithEnvironment("Scanning__Engines__AmsiBridgeUrl", amsiBridgeUrl)
+        .WithEnvironment("Scanning__Engines__AmsiBridgeToken", amsiBridgeToken)
+        // Härtung (REQ-12/REQ-25, AK-57): WorkerService darf die Brücke nur über
+        // deren Loopback-Endpoint erreichen. Im Dev-Betrieb übernimmt Aspire die
+        // Service-Discovery; im Produktionsbetrieb ist die Bridge-URL explizit
+        // auf den Loopback des Windows-Hosts gesetzt — der WorkerService selbst
+        // läuft im internen Container-Netz ohne externen Ausgang.
+        .WaitFor(amsiBridge);
 }
 
 var signingService = builder.AddProject<Projects.OfficeSelfSigningPortal_SigningService>("signingservice")

@@ -404,9 +404,12 @@ Kommandozeile `--Deployment:Profile=hardened` → Umgebungsvariable `Deployment_
 den AppHost-Start fail-fast. Beispiel hardened:
 
 ```bash
-# Bridge-Endpunkt betriebsseitig bereitstellen (User-Secret oder Umgebungsvariable),
-# sonst verweigert der AppHost-Start:
-dotnet user-secrets set --project src/OfficeSelfSigningPortal.AppHost "Parameters:amsi-bridge-url" "https://<windows-host>:<port>"
+# Bridge-Endpunkt UND Shared-Secret betriebsseitig bereitstellen (User-Secret oder
+# Umgebungsvariable), sonst verweigert der AppHost-Start. Im Dev-Betrieb startet die
+# AmsiScanBridge als zusätzliche AppHost-Ressource auf Loopback; im Produktionsbetrieb
+# läuft sie auf einem dedizierten Windows-Host und der WorkerService ruft sie dort ab.
+dotnet user-secrets set --project src/OfficeSelfSigningPortal.AppHost "Parameters:amsi-bridge-url"   "https://<windows-host>:<port>"
+dotnet user-secrets set --project src/OfficeSelfSigningPortal.AppHost "Parameters:amsi-bridge-token" "<mindestens 32 zufällige Bytes, base64 oder hex>"
 Deployment__Profile=hardened dotnet run --project src/OfficeSelfSigningPortal.AppHost
 ```
 
@@ -463,10 +466,16 @@ Verifikation im Betrieb:
 - Verhalten: Bridge nicht erreichbar/Timeout (Deadline 15 s, `Scanning:Engines:AmsiStageTimeout`)
   → AMSI-Stage `Failed` → Verdict `Inconclusive` → Vorgang `ReviewAusstehend`. **Kein
   Auto-Signing** — die Baseline-Engines (ClamAV/YARA/Heuristik) allein triggern keine Signierung.
-- Erkennen: `Failed`-Eintrag der AMSI-Stage im Scan-Ergebnis; gehäufte Vorgänge in `ReviewAusstehend`.
-- Handlung: Bridge-Dienst auf dem Windows-Host prüfen/neustarten; bestehende Vorgänge in
-  `ReviewAusstehend` manuell durch den Bearbeiter entscheiden (Freigabe erzeugt keinen neuen
-  Scan — die Entscheidung dokumentiert den AMSI-Ausfall).
+  Authentisierungs-Fehler (HTTP 401) zählen betrieblich als Ausfall: falsches oder rotiertes
+  `AmsiScanBridge:Token` → Brücke antwortet 401 → AMSI-Stage `Failed` → Inconclusive.
+- Erkennen: `Failed`-Eintrag der AMSI-Stage im Scan-Ergebnis (`Bridge-HTTP 401` oder
+  `Bridge-HTTP 5xx`); gehäufte Vorgänge in `ReviewAusstehend`; Health-Endpoint
+  `GET /health` der Brücke antwortet 200 (Loopback-Probe).
+- Handlung: Bridge-Dienst auf dem Windows-Host prüfen/neustarten; bei Token-Drift den
+  Parameter `Parameters:amsi-bridge-token` aktualisieren (AppHost + WorkerService erhalten
+  denselben Wert). Bestehende Vorgänge in `ReviewAusstehend` manuell durch den Bearbeiter
+  entscheiden (Freigabe erzeugt keinen neuen Scan — die Entscheidung dokumentiert den
+  AMSI-Ausfall).
 
 **OP-10c — DLQ-Handling (`ossp.scan-requested_error`), REQ-22:**
 - Verhalten: Nach Retry-Limit geht der Vorgang in `Fehler`; DLQ-Eintrag + Audit-Ereignis.

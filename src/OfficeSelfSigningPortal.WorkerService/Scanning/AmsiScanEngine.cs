@@ -23,6 +23,13 @@ public sealed class AmsiScanEngine(
 {
     public const string ContentNameHeader = "X-Content-Name";
 
+    /// <summary>
+    /// Header für das Shared-Secret zur AmsiScanBridge (F5, SF-04). Konstante
+    /// wird mit dem Brücken-Projekt geteilt (gleichnamige Konstante dort) — eine
+    /// Änderung des Werts muss in beiden Projekten erfolgen.
+    /// </summary>
+    public const string TokenHeader = "X-Amsi-Bridge-Token";
+
     public string EngineName => FindingSources.Amsi;
 
     public async Task<EngineRun> ScanAsync(ScanTarget target, CancellationToken cancellationToken)
@@ -37,11 +44,18 @@ public sealed class AmsiScanEngine(
 
         try
         {
-            using var content = new ByteArrayContent(target.Content);
-            content.Headers.ContentType = new MediaTypeHeaderValue(MediaTypeNames.Application.Octet);
-            content.Headers.TryAddWithoutValidation(ContentNameHeader, target.OriginalFileName);
+            using var request = new HttpRequestMessage(HttpMethod.Post, config.AmsiBridgeUrl);
+            request.Content = new ByteArrayContent(target.Content);
+            request.Content.Headers.ContentType = new MediaTypeHeaderValue(MediaTypeNames.Application.Octet);
+            request.Content.Headers.TryAddWithoutValidation(ContentNameHeader, target.OriginalFileName);
+            // Shared-Secret nur senden, wenn konfiguriert (REQ-24, TM-12). Ohne
+            // Token antwortet die Brücke 401 → EngineState.Failed → Inconclusive.
+            if (!string.IsNullOrEmpty(config.AmsiBridgeToken))
+            {
+                request.Headers.TryAddWithoutValidation(TokenHeader, config.AmsiBridgeToken);
+            }
 
-            using var response = await httpClient.PostAsync(config.AmsiBridgeUrl, content, cancellationToken);
+            using var response = await httpClient.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 return new EngineRun(EngineName, EngineState.Failed, $"Bridge-HTTP {(int)response.StatusCode}", []);
