@@ -32,6 +32,7 @@
     <ProjectReference Include="..\OfficeSelfSigningPortal.WebUI\OfficeSelfSigningPortal.WebUI.csproj" />
     <ProjectReference Include="..\OfficeSelfSigningPortal.WorkerService\OfficeSelfSigningPortal.WorkerService.csproj" />
     <ProjectReference Include="..\OfficeSelfSigningPortal.SigningService\OfficeSelfSigningPortal.SigningService.csproj" />
+    <ProjectReference Include="..\Ossp.AmsiScanBridge\Ossp.AmsiScanBridge.csproj" />
   </ItemGroup>
 
 </Project>

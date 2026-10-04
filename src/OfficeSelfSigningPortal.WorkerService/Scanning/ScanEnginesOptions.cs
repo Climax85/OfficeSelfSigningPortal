@@ -35,4 +35,13 @@ public sealed class ScanEnginesOptions
 
     /// <summary>HTTP-Endpunkt der AMSI-Bridge (nur ausgewertet, wenn <see cref="AmsiEnabled"/>).</summary>
     public string? AmsiBridgeUrl { get; set; }
+
+    /// <summary>
+    /// Shared-Secret für die AMSI-Bridge-Authentisierung (F5, SF-04). Wird im
+    /// <c>AmsiScanEngine</c> als <c>X-Amsi-Bridge-Token</c>-Header gesetzt;
+    /// fehlt der Wert, sendet der Worker keinen Header und die Brücke antwortet
+    /// 401 (→ AMSI-Ausfall, Inconclusive-Policy, AK-26). Konfiguration ausschließlich
+    /// über Aspire-Parameter/Umgebungsvariablen (REQ-24, TM-12).
+    /// </summary>
+    public string? AmsiBridgeToken { get; set; }
 }

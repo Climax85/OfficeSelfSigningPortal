@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>1a8b9c0d-1234-4567-89ab-cdef01234567</UserSecretsId>
+    <!-- Brücke läuft im Produktionsbetrieb auf einem dedizierten Windows-Host und
+         wird auch in der Aspire-AppHost-Dev-Pipeline gestartet (Profil hardened).
+         Kestrel-Mindestkonfiguration, keine Razor/Blazor-Abhängigkeiten. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OfficeSelfSigningPortal.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ossp.Contracts\Ossp.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
